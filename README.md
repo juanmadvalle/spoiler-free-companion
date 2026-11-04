@@ -49,6 +49,8 @@ Measured on the cached real books (`scripts/eval_semantic.py`, 31 hand-written p
 
 `--rerank` adds an optional cross-encoder (`Xenova/ms-marco-MiniLM-L-6-v2`, about 80 MB) that re-orders the top 40 hybrid candidates. In a first comparison it looked like +3 questions, but in the final integrated run it fixed 3 and broke 3 (18/31 either way), so it stays off by default. Larger rerankers (MiniLM-L12, Jina) did worse on this set.
 
+**Other embedding models.** Set `COMPANION_EMBED_MODEL` and run `embed` again (vectors are stored per model, so several can coexist). `python scripts/compare_models.py` compared three on the Alice and Frankenstein questions (17, hit in the top 5): `BAAI/bge-small-en-v1.5` (default, 67 MB, about 5 passages/s) 9, `BAAI/bge-base-en-v1.5` (210 MB, about 2/s) 11, `snowflake/snowflake-arctic-embed-m` (430 MB, about 1.6/s) 10. A gain of two questions out of 17 is within noise for this small set, so the default stays small; try `bge-base` if indexing time and disk do not matter to you.
+
 ### Aliases and future questions
 
 - **Aliases:** at ingest, multi-word proper names ("Sherlock Holmes") are detected with the position of their first appearance. A search for "Sherlock" also looks for "Holmes" only when, at your position, that name is the single unambiguous match for both words. A name first seen later (say a second "Mark Reed") can never influence an earlier answer, and an ambiguous surname such as "Bennet" is left alone. Nicknames ("Lizzy") are not detected.

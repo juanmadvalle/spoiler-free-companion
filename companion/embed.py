@@ -42,8 +42,8 @@ class FastEmbedder:
         return vectors / np.maximum(np.linalg.norm(vectors, axis=1, keepdims=True), 1e-12)
 
     def embed_query(self, texts: list[str]):
-        """Queries get the instruction prefix BGE models were trained with; passages do not."""
-        if self.name.startswith("BAAI/bge"):
+        """Queries get the instruction prefix BGE and Arctic models were trained with; passages do not."""
+        if self.name.startswith(("BAAI/bge", "snowflake/snowflake-arctic-embed")):
             texts = [BGE_QUERY_PREFIX + t for t in texts]
         return self.embed(texts)
 
