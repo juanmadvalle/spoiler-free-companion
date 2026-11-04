@@ -51,6 +51,60 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(llm.list_models(CONFIG, FakeHttp()), ["a-model", "b-model"])
 
 
+class RetryTests(unittest.TestCase):
+    def _http_error(self, code):
+        import io
+        import urllib.error
+
+        return urllib.error.HTTPError("http://x", code, "err", {}, io.BytesIO(b'{"error": "busy"}'))
+
+    def test_busy_server_is_retried_then_succeeds(self):
+        import io
+
+        calls, sleeps = [], []
+
+        def urlopen(request, timeout=None):
+            calls.append(1)
+            if len(calls) < 3:
+                raise self._http_error(503)
+            return io.BytesIO(b'{"ok": true}')
+
+        with patch("urllib.request.urlopen", urlopen):
+            self.assertEqual(llm.post("http://x", {}, {"a": 1}, sleep=sleeps.append), {"ok": True})
+        self.assertEqual((len(calls), sleeps), (3, [3, 8]))
+
+    def test_non_retryable_errors_fail_immediately_and_persistent_ones_give_up(self):
+        calls = []
+
+        def forbidden(request, timeout=None):
+            calls.append(1)
+            raise self._http_error(400)
+
+        with patch("urllib.request.urlopen", forbidden), self.assertRaises(RuntimeError):
+            llm.post("http://x", {}, {}, sleep=lambda s: None)
+        self.assertEqual(len(calls), 1)
+        calls.clear()
+
+        def busy(request, timeout=None):
+            calls.append(1)
+            raise self._http_error(429)
+
+        with patch("urllib.request.urlopen", busy), self.assertRaisesRegex(RuntimeError, "rate limit"):
+            llm.post("http://x", {}, {}, sleep=lambda s: None)
+        self.assertEqual(len(calls), 4)
+
+    def test_timeouts_are_retried_twice(self):
+        calls = []
+
+        def slow(request, timeout=None):
+            calls.append(1)
+            raise TimeoutError("read timed out")
+
+        with patch("urllib.request.urlopen", slow), self.assertRaisesRegex(RuntimeError, "in time"):
+            llm.post("http://x", {}, {}, sleep=lambda s: None)
+        self.assertEqual(len(calls), 3)
+
+
 class AdapterTests(unittest.TestCase):
     def test_messages_round_trip_between_formats(self):
         blocks = parse_message(tool_call("search_passages", {"query": "crystal"}))
@@ -95,6 +149,13 @@ class AdapterTests(unittest.TestCase):
         sent = json.dumps(http.calls[0][2])
         self.assertNotIn("delta", sent.replace("deltaite crystal", ""))  # only the question itself mentions it
         self.assertNotIn("charlie", sent)
+
+    def test_gemini_thought_signature_is_echoed_back_with_the_tool_call(self):
+        message = tool_call("search_passages", {"query": "x"})
+        message["tool_calls"][0]["extra_content"] = {"google": {"thought_signature": "sig-123"}}
+        blocks = parse_message(message)
+        converted = convert_messages([{"role": "assistant", "content": blocks}])
+        self.assertEqual(converted[0]["tool_calls"][0]["extra_content"]["google"]["thought_signature"], "sig-123")
 
     def test_unconfigured_provider_gives_a_clear_error(self):
         with patch.dict(os.environ, {**ISOLATED}, clear=True):

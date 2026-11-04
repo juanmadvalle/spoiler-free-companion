@@ -9,6 +9,7 @@ keystore.py) or with environment variables, which win:
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from types import SimpleNamespace as NS
@@ -16,7 +17,7 @@ from types import SimpleNamespace as NS
 from . import keystore
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-flash-lite-latest"  # alias that follows the current lite model: least often overloaded
 TIMEOUT = 90
 
 
@@ -33,19 +34,35 @@ def settings() -> NS | None:
     return NS(key=key or "", url=url.rstrip("/"), model=model)
 
 
-def post(url: str, headers: dict, payload: dict | None) -> dict:
+RETRY_DELAYS = (3, 8, 20)  # seconds; free tiers often answer 429/503 during demand spikes
+RETRYABLE = (429, 500, 502, 503, 504)
+
+
+def post(url: str, headers: dict, payload: dict | None, sleep=time.sleep) -> dict:
     request = urllib.request.Request(url, data=None if payload is None else json.dumps(payload).encode(),
                                      headers={"Content-Type": "application/json", **headers},
                                      method="GET" if payload is None else "POST")
-    try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")[:400]
-        hint = " (free-tier rate limit; wait a minute)" if error.code == 429 else ""
-        raise RuntimeError(f"LLM request failed: HTTP {error.code}{hint} {detail}") from None
-    except urllib.error.URLError as error:
-        raise RuntimeError(f"LLM request failed: {error.reason}") from None
+    for attempt in range(len(RETRY_DELAYS) + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")[:400]
+            if error.code in RETRYABLE and attempt < len(RETRY_DELAYS):
+                sleep(RETRY_DELAYS[attempt])
+                continue
+            hint = " (free-tier rate limit; wait a minute)" if error.code == 429 else ""
+            raise RuntimeError(f"LLM request failed: HTTP {error.code}{hint} {detail}") from None
+        except TimeoutError:
+            if attempt < 2:
+                sleep(RETRY_DELAYS[attempt])
+                continue
+            raise RuntimeError("LLM request failed: the server did not answer in time; try again") from None
+        except urllib.error.URLError as error:
+            if attempt < 2:  # brief network or proxy hiccups (e.g. intermittent TLS errors) are worth one more try
+                sleep(RETRY_DELAYS[attempt])
+                continue
+            raise RuntimeError(f"LLM request failed: {error.reason}") from None
 
 
 def list_models(config: NS | None = None, http=None) -> list[str]:
@@ -99,7 +116,10 @@ def convert_messages(messages) -> list[dict]:
         elif message["role"] == "assistant":
             text = "".join(b.text for b in content if b.type == "text")
             calls = [{"id": b.id, "type": "function",
-                      "function": {"name": b.name, "arguments": json.dumps(b.input)}} for b in content if b.type == "tool_use"]
+                      "function": {"name": b.name, "arguments": json.dumps(b.input)},
+                      # Gemini 3 requires its thought signature to be echoed back with the call
+                      **({"extra_content": b.extra_content} if getattr(b, "extra_content", None) else {})}
+                     for b in content if b.type == "tool_use"]
             entry = {"role": "assistant", "content": text or None}
             if calls:
                 entry["tool_calls"] = calls
@@ -120,5 +140,6 @@ def parse_message(message: dict) -> list:
         except json.JSONDecodeError:
             arguments = {}
         blocks.append(NS(type="tool_use", id=call["id"], name=call["function"]["name"],
-                         input=arguments if isinstance(arguments, dict) else {}))
+                         input=arguments if isinstance(arguments, dict) else {},
+                         extra_content=call.get("extra_content")))
     return blocks

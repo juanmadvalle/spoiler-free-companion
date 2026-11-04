@@ -49,7 +49,9 @@ The key is saved on your computer only: in the system credential store if the op
 | Any OpenAI-compatible endpoint | `COMPANION_LLM_BASE_URL`, `COMPANION_LLM_API_KEY`, `COMPANION_LLM_MODEL` | varies |
 | Anthropic | `ANTHROPIC_API_KEY` (and `pip install anthropic`), `COMPANION_MODEL` | paid |
 
-`python -m companion models` lists the model names the configured endpoint offers; pick one with `COMPANION_LLM_MODEL` (the default is `gemini-2.5-flash`, which may have been retired). Anthropic is used if its key is set, otherwise the compatible endpoint. Only the retrieved passages, never the whole book, are sent. Small free or local models can be unreliable at tool calling, so `--agent` may need a stronger model than the plain `ask`.
+`python -m companion models` lists the model names the configured endpoint offers; pick one with `COMPANION_LLM_MODEL` (the default is Google's `gemini-flash-lite-latest` alias, which follows the current lite model and was the one that answered when the larger flash models were overloaded on the free tier; fixed names such as `gemini-2.5-flash` get retired). Anthropic is used if its key is set, otherwise the compatible endpoint. Only the retrieved passages, never the whole book, are sent. Small free or local models can be unreliable at tool calling, so `--agent` may need a stronger model than the plain `ask`.
+
+**Tested live** (November 2026, Gemini free tier, `gemini-3.1-flash-lite`, Sherlock Holmes): a plain `ask` answers from the passages with citations, says "not established" for a character who has not appeared yet, and `--agent` ran a tool call and answered with citations. Larger flash models often returned HTTP 503 (overloaded) on the free tier; requests are retried with a short wait on 429/5xx, timeouts and transient network errors. Gemini 3 needs its thought signature echoed back with each tool call, which the adapter does. Not yet verified live: the agent refusing to read ahead (covered by tests with a scripted model).
 
 ### Search quality
 
