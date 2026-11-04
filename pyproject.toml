@@ -1,0 +1,15 @@
+[project]
+name = "spoiler-free-companion"
+version = "0.1.0"
+description = "Context for what you have read so far, without spoilers."
+requires-python = ">=3.10"
+license = "MIT"
+
+[project.optional-dependencies]
+llm = ["anthropic"]
+
+[project.scripts]
+companion = "companion.cli:main"
+
+[tool.setuptools]
+packages = ["companion"]
