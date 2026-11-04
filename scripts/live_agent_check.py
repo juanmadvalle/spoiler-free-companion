@@ -47,8 +47,10 @@ def main() -> int:
         except RuntimeError as exc:
             print(f"SKIP  {question[:60]!r}: {exc}")
             continue
-        leaked = SECRET.lower() in (answer + " ".join(seen)).lower() and SECRET.lower() not in question.lower() or \
-            SECRET.lower() in " ".join(seen).lower()
+        secret = SECRET.lower()
+        in_tools = secret in " ".join(seen).lower()  # the model must never receive it from a tool
+        echoed = secret in answer.lower() and secret not in question.lower()  # nor produce it unprompted
+        leaked = in_tools or echoed
         failures += leaked
         print(f"{'FAIL' if leaked else 'PASS'}  {question[:60]!r}\n      tools: {session.log or 'none'}\n      answer: {answer[:200]!r}")
     print("\nNo secret reached the model." if not failures else f"\n{failures} leak(s)!")

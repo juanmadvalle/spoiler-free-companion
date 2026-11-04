@@ -145,6 +145,25 @@ class WebTests(unittest.TestCase):
         self.assertEqual({b["title"] for b in self.api("GET", "/api/state")[1]["books"]}, {"S"})
         self.assertEqual(self.api("POST", "/api/delete", {"title": "My Book"})[0], 400)
 
+    def test_epub_with_namespaces_and_heading_titles_like_a_browser_made_one(self):
+        """Same structure as the EPUB built in the browser check: namespaced container/package, h1 titles."""
+        from zipfile import ZIP_STORED, ZipFile
+
+        path = Path(self.temp.name) / "ns.epub"
+        body = "<p>" + "The tide rose over the old pier while the gulls wheeled above the grey water. " * 6 + "</p>"
+        item = '<item id="{0}" href="{0}.xhtml" media-type="application/xhtml+xml"/>'
+        with ZipFile(path, "w", ZIP_STORED) as z:
+            z.writestr("META-INF/container.xml", '<?xml version="1.0"?><container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" '
+                       'version="1.0"><rootfiles><rootfile full-path="OEBPS/book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>')
+            z.writestr("OEBPS/book.opf", '<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><manifest>'
+                       + item.format("c0") + item.format("c1") + '</manifest><spine><itemref idref="c1"/><itemref idref="c0"/></spine></package>')
+            z.writestr("OEBPS/c0.xhtml", f'<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><body><h1>Second in file order</h1>{body}</body></html>')
+            z.writestr("OEBPS/c1.xhtml", f'<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml"><body><h1>First in reading order</h1>{body}</body></html>')
+        status, data = self.api("POST", "/api/ingest?filename=ns.epub&title=NS", raw=path.read_bytes(), content_type="application/octet-stream")
+        self.assertEqual((status, data["chapters"]), (200, 2))
+        titles = [c["title"] for c in self.api("GET", "/api/chapters?title=NS")[1]]
+        self.assertEqual(titles, ["First in reading order", "Second in file order"])  # follows the spine, not file order
+
     def test_ingest_rejects_other_formats_and_garbage(self):
         self.assertEqual(self.api("POST", "/api/ingest?filename=a.exe", raw=b"MZ", content_type="application/octet-stream")[0], 400)
         self.assertEqual(self.api("POST", "/api/ingest?filename=a.txt", raw=b"too short", content_type="application/octet-stream")[0], 400)
