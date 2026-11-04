@@ -110,6 +110,29 @@ class RealBookTests(unittest.TestCase):
             self.assertEqual(library.search(title, word, before), [])
             self.assertTrue(library.search(title, word, after))
 
+    def test_alias_expansion_only_uses_names_already_seen(self):
+        for title, library, chapters, _ in self.each_book():
+            names = library.db.execute(
+                "SELECT n.name, n.first_seen FROM names n JOIN works w ON w.id = n.work_id WHERE w.title = ?",
+                (title,)).fetchall()
+            tokens = sorted({t for name, _ in names for t in name.split()})
+            for k in spread(list(range(1, len(chapters) + 1)), 15):
+                horizon = library.horizon_after_chapter(title, k)
+                allowed = {t for name, seen in names if seen <= horizon for t in name.split()}
+                for token in tokens:
+                    extra = library.aliases(title, [token], horizon)
+                    self.assertLessEqual(set(extra), allowed, f"{token} after chapter {k}")
+                    if token not in allowed:
+                        self.assertEqual(extra, [], f"{token} expanded before its name appeared")
+
+    def test_sherlock_first_name_finds_surname_only_passages(self):
+        if "Sherlock Holmes" not in self.books:
+            self.skipTest("Sherlock Holmes unavailable")
+        library = self.books["Sherlock Holmes"][0]
+        horizon = library.horizon_after_chapter("Sherlock Holmes", 1)
+        found = library.search("Sherlock Holmes", "Sherlock", horizon, limit=50)
+        self.assertTrue(any("sherlock" not in p.text.lower() and "holmes" in p.text.lower() for p in found))
+
     def test_locating_a_remembered_phrase_finds_the_right_chapter(self):
         total = exact = later = 0
         for title, library, chapters, _ in self.each_book():

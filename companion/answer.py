@@ -3,6 +3,7 @@
 import os
 from typing import Protocol
 
+from .guard import REFUSAL, is_future_question
 from .store import Library, Passage
 
 SYSTEM = (
@@ -51,6 +52,8 @@ def check_horizon(passages: list[Passage], horizon: int) -> None:
 
 def ask(library: Library, title: str, question: str, horizon: int, answerer: Answerer | None = None,
         limit: int = 6) -> tuple[str, list[Passage]]:
+    if is_future_question(question):  # no search and no model call
+        return REFUSAL, []
     passages = library.search(title, question, horizon, limit)
     check_horizon(passages, horizon)
     return (answerer or default_answerer())(question, passages), passages

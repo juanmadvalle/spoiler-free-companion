@@ -28,6 +28,11 @@ python -m companion recap "My Book" --phrase "a line I just read"
 python -m unittest discover -s tests -t .
 ```
 
+### Aliases and future questions
+
+- **Aliases:** at ingest, multi-word proper names ("Sherlock Holmes") are detected with the position of their first appearance. A search for "Sherlock" also looks for "Holmes" only when, at your position, that name is the single unambiguous match for both words. A name first seen later (say a second "Mark Reed") can never influence an earlier answer, and an ambiguous surname such as "Bennet" is left alone. Nicknames ("Lizzy") are not detected.
+- **Future questions:** "How does it end?", "Will she die?", "¿Cómo acaba?" and similar get an immediate "not established up to this point" with no search and no model call. The patterns are deliberately narrow, so a question about the past that is misread can simply be rephrased; the horizon filter still protects everything else.
+
 ### Agent mode
 
 `ask --agent` (needs `ANTHROPIC_API_KEY` and `pip install anthropic`) lets the model call search tools in a loop: `search_passages`, `recent_passages`, `read_chapter` and `ask_user`. Add `--verbose` to print each tool call.

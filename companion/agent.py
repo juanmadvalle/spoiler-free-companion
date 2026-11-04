@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass, field
 
 from .answer import MODEL, check_horizon
+from .guard import REFUSAL, is_future_question
 from .store import Library, Passage
 
 MAX_TURNS = 8
@@ -80,6 +81,8 @@ def make_client():
 
 
 def run_agent(session: Session, question: str, client=None, max_turns: int = MAX_TURNS) -> str:
+    if is_future_question(question):  # refuse before spending any API call
+        return REFUSAL
     client = client or make_client()
     messages = [{"role": "user", "content": question}]
     for _ in range(max_turns):

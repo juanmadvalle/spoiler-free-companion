@@ -7,8 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .ingest import Chapter, chunk
+from .names import expand_words, extract_names
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS names (work_id INTEGER NOT NULL, name TEXT NOT NULL, first_seen INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS works (id INTEGER PRIMARY KEY, title TEXT UNIQUE NOT NULL);
 CREATE TABLE IF NOT EXISTS chunks (
     id INTEGER PRIMARY KEY, work_id INTEGER NOT NULL REFERENCES works(id),
@@ -39,14 +41,17 @@ class Library:
         with self.db:
             self._delete_work(title)
             work_id = self.db.execute("INSERT INTO works (title) VALUES (?)", (title,)).lastrowid
-            ordinal = 0
+            ordinal, texts = 0, []
             for number, chapter in enumerate(chapters, start=1):
                 for text in chunk(chapter.paragraphs):
                     ordinal += 1
+                    texts.append((ordinal, text))
                     row = self.db.execute(
                         "INSERT INTO chunks (work_id, ordinal, chapter, chapter_title, text) VALUES (?,?,?,?,?)",
                         (work_id, ordinal, number, chapter.title, text)).lastrowid
                     self.db.execute("INSERT INTO chunks_fts (rowid, text) VALUES (?, ?)", (row, text))
+            self.db.executemany("INSERT INTO names (work_id, name, first_seen) VALUES (?,?,?)",
+                                [(work_id, " ".join(n), seen) for n, seen in extract_names(texts).items()])
         return ordinal
 
     def _delete_work(self, title: str) -> None:
@@ -56,6 +61,7 @@ class Library:
                 self.db.execute("INSERT INTO chunks_fts (chunks_fts, rowid, text) VALUES ('delete', ?, ?)",
                                 (chunk_id, text))
             self.db.execute("DELETE FROM chunks WHERE work_id = ?", row)
+            self.db.execute("DELETE FROM names WHERE work_id = ?", row)
             self.db.execute("DELETE FROM works WHERE id = ?", row)
 
     def _work(self, title: str) -> int:
@@ -112,12 +118,20 @@ class Library:
         words = _words(query)
         if not words:
             return []
+        work_id = self._work(title)
+        words += self.aliases(title, words, horizon)
         rows = self.db.execute(
             "SELECT c.ordinal, c.chapter, c.chapter_title, c.text FROM chunks_fts f "
             "JOIN chunks c ON c.id = f.rowid "
             "WHERE chunks_fts MATCH ? AND c.work_id = ? AND c.ordinal <= ? "
-            "ORDER BY bm25(chunks_fts) LIMIT ?", (_fts_query(words), self._work(title), horizon, limit)).fetchall()
+            "ORDER BY bm25(chunks_fts) LIMIT ?", (_fts_query(words), work_id, horizon, limit)).fetchall()
         return sorted((Passage(*r) for r in rows), key=lambda p: p.ordinal)
+
+    def aliases(self, title: str, words: list[str], horizon: int) -> list[str]:
+        """Other name parts for the query words, from names first seen at or before the horizon."""
+        rows = self.db.execute("SELECT name, first_seen FROM names WHERE work_id = ? AND first_seen <= ?",
+                               (self._work(title), horizon)).fetchall()
+        return expand_words(words, {tuple(name.split()): seen for name, seen in rows}, horizon)
 
     def recent(self, title: str, horizon: int, limit: int = 12) -> list[Passage]:
         """The last passages up to the horizon, in reading order (for recaps)."""
