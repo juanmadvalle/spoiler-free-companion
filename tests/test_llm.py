@@ -1,6 +1,7 @@
 """OpenAI-compatible provider adapter, tested against a fake HTTP function (no network, no key)."""
 import json
 import os
+import tempfile
 import unittest
 from types import SimpleNamespace as NS
 from unittest.mock import patch
@@ -30,14 +31,18 @@ def tool_call(name, arguments, call_id="c1"):
                                              "function": {"name": name, "arguments": json.dumps(arguments)}}]}
 
 
+ISOLATED = {"COMPANION_CONFIG": os.path.join(tempfile.gettempdir(), "companion-test-missing", "config.json"),
+            "COMPANION_NO_KEYRING": "1"}  # never read the developer's real stored key
+
+
 class SettingsTests(unittest.TestCase):
     def test_settings_come_from_environment_only(self):
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {**ISOLATED}, clear=True):
             self.assertIsNone(settings())
-        with patch.dict(os.environ, {"GEMINI_API_KEY": "abc"}, clear=True):
+        with patch.dict(os.environ, {**ISOLATED, "GEMINI_API_KEY": "abc"}, clear=True):
             config = settings()
             self.assertEqual((config.key, config.url), ("abc", llm.GEMINI_URL))
-        with patch.dict(os.environ, {"COMPANION_LLM_BASE_URL": "http://localhost:11434/v1/",
+        with patch.dict(os.environ, {**ISOLATED, "COMPANION_LLM_BASE_URL": "http://localhost:11434/v1/",
                                      "COMPANION_LLM_MODEL": "llama"}, clear=True):
             config = settings()
             self.assertEqual((config.key, config.url, config.model), ("", "http://localhost:11434/v1", "llama"))
@@ -84,7 +89,7 @@ class AdapterTests(unittest.TestCase):
         self.addCleanup(library.close)
         library.add_work("S", CHAPTERS)
         horizon = library.horizon_after_chapter("S", 1)
-        with patch.object(llm, "post", http), patch.dict(os.environ, {"GEMINI_API_KEY": "abc"}, clear=True):
+        with patch.object(llm, "post", http), patch.dict(os.environ, {**ISOLATED, "GEMINI_API_KEY": "abc"}, clear=True):
             text, _ = answer.ask(library, "S", "tell me about the deltaite crystal", horizon, answer.default_answerer())
         self.assertEqual(text, "ok")
         sent = json.dumps(http.calls[0][2])
@@ -92,7 +97,7 @@ class AdapterTests(unittest.TestCase):
         self.assertNotIn("charlie", sent)
 
     def test_unconfigured_provider_gives_a_clear_error(self):
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {**ISOLATED}, clear=True):
             with self.assertRaises(RuntimeError):
                 OpenAICompatClient()
 

@@ -3,6 +3,7 @@
 import os
 from typing import Protocol
 
+from . import keystore
 from .guard import REFUSAL, is_future_question
 from .store import Library, Passage
 
@@ -33,7 +34,7 @@ def extractive(question: str, passages: list[Passage]) -> str:
 def claude(question: str, passages: list[Passage]) -> str:
     import anthropic  # optional dependency
 
-    reply = anthropic.Anthropic().messages.create(
+    reply = anthropic.Anthropic(api_key=keystore.anthropic_key()).messages.create(
         model=MODEL, max_tokens=800, system=SYSTEM,
         messages=[{"role": "user", "content": f"Passages:\n{build_context(passages)}\n\nQuestion: {question}"}])
     return "".join(block.text for block in reply.content if block.type == "text")
@@ -49,7 +50,7 @@ def compatible(question: str, passages: list[Passage]) -> str:
 def default_answerer() -> Answerer:
     from . import llm
 
-    if os.environ.get("ANTHROPIC_API_KEY"):
+    if keystore.anthropic_key():
         return claude
     return compatible if llm.settings() else extractive
 

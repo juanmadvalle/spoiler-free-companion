@@ -30,7 +30,17 @@ python -m unittest discover -s tests -t .
 
 ### Choosing an LLM
 
-Set one of these environment variables in your own terminal (never in a file or in the repository):
+Every user brings their own key; nothing is bundled and nothing is stored in the repository. The easiest way:
+
+```sh
+python -m companion key set                      # asks for the key without echoing it (Gemini by default)
+python -m companion key set --provider anthropic
+python -m companion key set --provider custom --base-url http://localhost:11434/v1 --model llama3.2
+python -m companion key status                   # shows a masked key and where it is stored
+python -m companion key clear
+```
+
+The key is saved on your computer only: in the system credential store if the optional `keyring` package is installed (`pip install keyring`), otherwise in `~/.spoiler-free-companion/config.json` with owner-only permissions, which is plain text. Environment variables always win over the stored key:
 
 | Provider | Variables | Cost |
 |---|---|---|

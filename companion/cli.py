@@ -1,9 +1,11 @@
 """Command line: ingest a book, say where you are, ask or recap."""
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
+from . import keystore
 from .agent import Session, run_agent
 from .answer import ask, recap
 from .embed import default_embedder, default_reranker
@@ -29,6 +31,12 @@ def main(argv=None) -> int:
 
     sub.add_parser("list", help="List books")
     sub.add_parser("models", help="List models offered by the configured LLM endpoint")
+    key = sub.add_parser("key", help="Manage your own LLM API key (stored on this computer only)")
+    key.add_argument("action", choices=("set", "status", "clear"))
+    key.add_argument("--provider", choices=keystore.PROVIDERS, default="gemini")
+    key.add_argument("--base-url", default="", help="With --provider custom, e.g. http://localhost:11434/v1")
+    key.add_argument("--model", default="", help="Model name (see `models`)")
+    key.add_argument("--stdin", action="store_true", help="Read the key from standard input instead of prompting")
     chap = sub.add_parser("chapters", help="List chapter numbers")
     chap.add_argument("title")
 
@@ -44,6 +52,8 @@ def main(argv=None) -> int:
             command.add_argument("--verbose", action="store_true", help="With --agent: print each tool call")
 
     args = parser.parse_args(argv)
+    if args.command == "key":
+        return _key(args)
     semantic = not args.no_embeddings
     library = Library(args.db, embedder=default_embedder() if semantic else None,
                       reranker=default_reranker() if semantic and args.rerank else None)
@@ -97,3 +107,29 @@ def _embed(library: Library, title: str) -> None:
     count = library.embed_work(
         title, progress=lambda done, total: print(f"\r  embedding {done}/{total}", end="", file=sys.stderr))
     print(f"\nEmbedded {count} passages with {library.embedder.name}.")
+
+
+def _key(args) -> int:
+    """`key set` asks for the key without echoing it; nothing is written inside the repository."""
+    try:
+        if args.action == "set":
+            if args.stdin:
+                secret = sys.stdin.readline()
+            else:
+                import getpass
+
+                secret = getpass.getpass(f"Paste your {args.provider} API key (hidden, stored only on this computer): ")
+            where = keystore.save(args.provider, secret, args.base_url, args.model)
+            print(f"Saved your {args.provider} key in {where}.")
+        elif args.action == "clear":
+            print("Stored key removed." if keystore.clear() else "No stored key.")
+        else:
+            stored = keystore.load()
+            print(f"stored: provider={stored.get('provider', '(none)')} key={keystore.mask(stored.get('api_key', ''))} "
+                  f"model={stored.get('model') or '(default)'} file={keystore.config_path()}")
+            print("environment overrides: " + (", ".join(n for n in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY",
+                                                                       "COMPANION_LLM_API_KEY") if os.environ.get(n)) or "none"))
+        return 0
+    except (ValueError, OSError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1

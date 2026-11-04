@@ -1,6 +1,7 @@
 """Any OpenAI-compatible chat endpoint (Gemini's free tier, Ollama, Groq, ...) using only the standard library.
 
-Configure with environment variables, never files:
+The user supplies their own key with `python -m companion key set` (stored outside the repository, see
+keystore.py) or with environment variables, which win:
   GEMINI_API_KEY (or COMPANION_LLM_API_KEY)   key; GEMINI_API_KEY selects Google's endpoint by default
   COMPANION_LLM_BASE_URL                      e.g. http://localhost:11434/v1 for Ollama
   COMPANION_LLM_MODEL                         model name (see `python -m companion models`)
@@ -12,18 +13,24 @@ import urllib.error
 import urllib.request
 from types import SimpleNamespace as NS
 
+from . import keystore
+
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 DEFAULT_MODEL = "gemini-2.5-flash"
 TIMEOUT = 90
 
 
 def settings() -> NS | None:
-    """Endpoint settings from the environment, or None when no compatible provider is configured."""
-    key = os.environ.get("COMPANION_LLM_API_KEY") or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    url = os.environ.get("COMPANION_LLM_BASE_URL") or (GEMINI_URL if key else None)
+    """Endpoint settings (environment first, then `companion key set`), or None when nothing is configured."""
+    stored = keystore.load()
+    stored = stored if stored.get("provider") in ("gemini", "custom") else {}
+    key = (os.environ.get("COMPANION_LLM_API_KEY") or os.environ.get("GEMINI_API_KEY")
+           or os.environ.get("GOOGLE_API_KEY") or stored.get("api_key"))
+    url = os.environ.get("COMPANION_LLM_BASE_URL") or stored.get("base_url") or (GEMINI_URL if key else None)
     if not url:
         return None
-    return NS(key=key or "", url=url.rstrip("/"), model=os.environ.get("COMPANION_LLM_MODEL", DEFAULT_MODEL))
+    model = os.environ.get("COMPANION_LLM_MODEL") or stored.get("model") or DEFAULT_MODEL
+    return NS(key=key or "", url=url.rstrip("/"), model=model)
 
 
 def post(url: str, headers: dict, payload: dict | None) -> dict:

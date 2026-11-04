@@ -4,6 +4,7 @@ import json
 import os
 from dataclasses import dataclass, field
 
+from . import keystore
 from .answer import MODEL, check_horizon
 from .guard import REFUSAL, is_future_question
 from .store import Library, Passage
@@ -73,10 +74,10 @@ def format_results(passages: list[Passage]) -> str:
 
 
 def make_client():
-    if os.environ.get("ANTHROPIC_API_KEY"):
+    if keystore.anthropic_key():
         import anthropic  # optional dependency
 
-        return anthropic.Anthropic()
+        return anthropic.Anthropic(api_key=keystore.anthropic_key())
     from .llm import OpenAICompatClient
 
     return OpenAICompatClient()  # Gemini free tier, Ollama, ...; raises a clear error when nothing is configured
