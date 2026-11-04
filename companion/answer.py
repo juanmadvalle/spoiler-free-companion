@@ -39,8 +39,19 @@ def claude(question: str, passages: list[Passage]) -> str:
     return "".join(block.text for block in reply.content if block.type == "text")
 
 
+def compatible(question: str, passages: list[Passage]) -> str:
+    """Any OpenAI-compatible endpoint (Gemini free tier, Ollama, ...), see llm.py."""
+    from . import llm
+
+    return llm.complete(SYSTEM, f"Passages:\n{build_context(passages)}\n\nQuestion: {question}")
+
+
 def default_answerer() -> Answerer:
-    return claude if os.environ.get("ANTHROPIC_API_KEY") else extractive
+    from . import llm
+
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return claude
+    return compatible if llm.settings() else extractive
 
 
 def check_horizon(passages: list[Passage], horizon: int) -> None:

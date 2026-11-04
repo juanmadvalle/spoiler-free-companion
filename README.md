@@ -17,7 +17,7 @@ Plain-text ingestion drops everything before the first chapter heading and prefa
 
 ## Usage
 
-Python 3.10+, standard library only. The LLM is optional: without `ANTHROPIC_API_KEY` it prints the relevant passages instead of a written answer. With a key (and `pip install anthropic`) it answers in prose; set `COMPANION_MODEL` to change the model.
+Python 3.10+, standard library only. The LLM is optional: without a key it prints the relevant passages instead of a written answer. See *Choosing an LLM* below to get written answers, including a free option.
 
 ```sh
 python -m companion ingest mybook.epub --title "My Book"      # .epub or .txt you own
@@ -27,6 +27,19 @@ python -m companion ask "My Book" --phrase "a line I just read" "What does she w
 python -m companion recap "My Book" --phrase "a line I just read"
 python -m unittest discover -s tests -t .
 ```
+
+### Choosing an LLM
+
+Set one of these environment variables in your own terminal (never in a file or in the repository):
+
+| Provider | Variables | Cost |
+|---|---|---|
+| Google Gemini (free tier) | `GEMINI_API_KEY` from [aistudio.google.com](https://aistudio.google.com) | free, rate-limited; on the free tier Google may use submitted text to improve its products, so passages of the book you ask about are sent to Google |
+| Local Ollama | `COMPANION_LLM_BASE_URL=http://localhost:11434/v1`, `COMPANION_LLM_MODEL=<model>` | free, private, slower |
+| Any OpenAI-compatible endpoint | `COMPANION_LLM_BASE_URL`, `COMPANION_LLM_API_KEY`, `COMPANION_LLM_MODEL` | varies |
+| Anthropic | `ANTHROPIC_API_KEY` (and `pip install anthropic`), `COMPANION_MODEL` | paid |
+
+`python -m companion models` lists the model names the configured endpoint offers; pick one with `COMPANION_LLM_MODEL` (the default is `gemini-2.5-flash`, which may have been retired). Anthropic is used if its key is set, otherwise the compatible endpoint. Only the retrieved passages, never the whole book, are sent. Small free or local models can be unreliable at tool calling, so `--agent` may need a stronger model than the plain `ask`.
 
 ### Search quality
 
@@ -60,7 +73,7 @@ Measured on the cached real books (`scripts/eval_semantic.py`, 31 hand-written p
 
 ### Agent mode
 
-`ask --agent` (needs `ANTHROPIC_API_KEY` and `pip install anthropic`) lets the model call search tools in a loop: `search_passages`, `recent_passages`, `read_chapter` and `ask_user`. Add `--verbose` to print each tool call.
+`ask --agent` (needs an LLM, see below) lets the model call search tools in a loop: `search_passages`, `recent_passages`, `read_chapter` and `ask_user`. Add `--verbose` to print each tool call.
 
 The horizon stays under the harness's control: no tool takes a horizon, book or position argument, extra arguments the model invents are ignored, and every result is capped at the horizon in SQL and re-checked. Tests drive the loop with a scripted fake model that tries to read ahead. Not yet exercised against the live API.
 

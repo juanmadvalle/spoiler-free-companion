@@ -73,11 +73,13 @@ def format_results(passages: list[Passage]) -> str:
 
 
 def make_client():
-    import anthropic  # optional dependency
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        import anthropic  # optional dependency
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise RuntimeError("Agent mode needs ANTHROPIC_API_KEY (and `pip install anthropic`)")
-    return anthropic.Anthropic()
+        return anthropic.Anthropic()
+    from .llm import OpenAICompatClient
+
+    return OpenAICompatClient()  # Gemini free tier, Ollama, ...; raises a clear error when nothing is configured
 
 
 def run_agent(session: Session, question: str, client=None, max_turns: int = MAX_TURNS) -> str:

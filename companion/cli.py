@@ -28,6 +28,7 @@ def main(argv=None) -> int:
     parser.add_argument("--rerank", action="store_true", help="Re-order hybrid candidates with a cross-encoder (slower; no measured gain yet)")
 
     sub.add_parser("list", help="List books")
+    sub.add_parser("models", help="List models offered by the configured LLM endpoint")
     chap = sub.add_parser("chapters", help="List chapter numbers")
     chap.add_argument("title")
 
@@ -39,7 +40,7 @@ def main(argv=None) -> int:
         where.add_argument("--phrase", help="A line you remember reading last")
         if name == "ask":
             command.add_argument("question")
-            command.add_argument("--agent", action="store_true", help="Let the model call search tools (needs ANTHROPIC_API_KEY)")
+            command.add_argument("--agent", action="store_true", help="Let the model call search tools (needs an LLM key, see README)")
             command.add_argument("--verbose", action="store_true", help="With --agent: print each tool call")
 
     args = parser.parse_args(argv)
@@ -59,6 +60,11 @@ def main(argv=None) -> int:
             _embed(library, args.title)
         elif args.command == "list":
             print("\n".join(library.works()) or "No books yet.")
+        elif args.command == "models":
+            from .llm import list_models
+
+            for name in list_models():
+                print(name)
         elif args.command == "chapters":
             for number, name in library.chapters(args.title):
                 print(f"{number:>3}  {name}")
