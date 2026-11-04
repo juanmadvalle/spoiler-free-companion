@@ -32,6 +32,21 @@ python -m unittest discover -s tests -t .
 
 The index stems words ("crying" finds "cried") and re-ranks the top candidates by how many distinct query terms each passage covers. `python scripts/eval_search.py` measures this on the cached real books: queries of three remembered words, all inflected, find a passage containing them in the top 3 for 99.0% of 585 cases (0.5% without stemming), and noisy queries rise from 92.8% to 98.1% with the re-ranking. Libraries built earlier are upgraded in place on first open. Synonyms and paraphrases are not handled.
 
+### Semantic search (optional, local, no API key)
+
+`pip install fastembed` (about 130 MB model, downloaded once to `~/.cache/spoiler-free-companion/models`), then:
+
+```sh
+python -m companion ingest mybook.epub --title "My Book" --embed
+python -m companion embed "My Book"        # for a book already ingested
+```
+
+Questions are then matched by meaning as well as by words ("a child weeping" finds "the girl cried"). Use `--no-embeddings` to force keyword search. Embedding is slow on CPU (about 5 passages per second: a novel takes a few minutes) but happens once.
+
+Each passage is embedded on its own, and only the vectors of passages at or before your horizon are ever loaded from the database, so the spoiler guarantee is unchanged; tests check this on all four real books. Passages that contain nearly all the query words stay first (exact lookups), the rest are merged with the semantic ranking.
+
+Measured on the cached real books (`scripts/eval_semantic.py`, 17 hand-written paraphrase questions, hit in the top 5): keyword-only 5/17, hybrid 8/17. Exact-word lookups are unchanged (237/238 in the top 3) and inflected lookups dip slightly (233 to 222 of 238). The question set is small and the model is a compact one, so treat these as indicative; many paraphrases still miss.
+
 ### Aliases and future questions
 
 - **Aliases:** at ingest, multi-word proper names ("Sherlock Holmes") are detected with the position of their first appearance. A search for "Sherlock" also looks for "Holmes" only when, at your position, that name is the single unambiguous match for both words. A name first seen later (say a second "Mark Reed") can never influence an earlier answer, and an ambiguous surname such as "Bennet" is left alone. Nicknames ("Lizzy") are not detected.

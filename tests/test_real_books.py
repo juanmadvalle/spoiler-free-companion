@@ -97,6 +97,35 @@ class RealBookTests(unittest.TestCase):
                     self.assertFalse(set(_words(passage.text)) & set(future_only),
                                      f"future word leaked after chapter {k}")
 
+    def test_semantic_path_never_loads_future_passages(self):
+        from tests.fake_embed import FakeEmbedder
+
+        for title, library, chapters, words in self.each_book():
+            library.embedder = FakeEmbedder()
+            self.addCleanup(setattr, library, "embedder", None)
+            library.embed_work(title)
+            loaded = []
+            original = library._semantic
+
+            def recording(*args, **kwargs):
+                rows = original(*args, **kwargs)
+                loaded.extend(rows)
+                return rows
+
+            library._semantic = recording
+            self.addCleanup(setattr, library, "_semantic", original)
+            for k in spread(list(range(1, len(chapters))), 10):
+                seen = set().union(*words[:k])
+                future_only = sorted(set().union(*words[k:]) - seen)
+                horizon = library.horizon_after_chapter(title, k)
+                for query in (" ".join(spread(future_only, SAMPLE)), *spread(future_only, 10)):
+                    for passage in library.search(title, query, horizon, limit=50):
+                        self.assertLessEqual(passage.ordinal, horizon)
+                        self.assertFalse(set(_words(passage.text)) & set(future_only))
+                self.assertTrue(loaded)
+                self.assertTrue(all(row[0] <= horizon for row in loaded))
+                loaded.clear()
+
     def test_first_appearance_traps(self):
         """A character is invisible until the chapter they first appear in."""
         traps = {"Sherlock Holmes": "jabez", "Pride and Prejudice": "wickham", "Frankenstein": "clerval",

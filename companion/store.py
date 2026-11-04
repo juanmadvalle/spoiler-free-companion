@@ -11,6 +11,9 @@ from .names import expand_words, extract_names
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS names (work_id INTEGER NOT NULL, name TEXT NOT NULL, first_seen INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS vectors (
+    work_id INTEGER NOT NULL, ordinal INTEGER NOT NULL, model TEXT NOT NULL, vec BLOB NOT NULL,
+    PRIMARY KEY (work_id, ordinal, model));
 CREATE TABLE IF NOT EXISTS works (id INTEGER PRIMARY KEY, title TEXT UNIQUE NOT NULL);
 CREATE TABLE IF NOT EXISTS chunks (
     id INTEGER PRIMARY KEY, work_id INTEGER NOT NULL REFERENCES works(id),
@@ -20,6 +23,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     text, content='chunks', content_rowid='id', tokenize='porter unicode61 remove_diacritics 2');
 """
 CANDIDATE_FACTOR = 5
+KEYWORD_WEIGHT = 0.5  # relative weight of the keyword ranking when fused with the semantic one
+MIN_KEYWORD_COVERAGE = 2  # keyword hits must share at least this many query terms to count in the fusion
 
 
 @dataclass(frozen=True)
@@ -31,7 +36,8 @@ class Passage:
 
 
 class Library:
-    def __init__(self, path: Path | str):
+    def __init__(self, path: Path | str, embedder=None):
+        self.embedder = embedder  # optional; semantic search is used only for works that have vectors
         self.db = sqlite3.connect(path)
         self.db.executescript(SCHEMA)
         self._upgrade_fts()
@@ -74,6 +80,7 @@ class Library:
                                 (chunk_id, text))
             self.db.execute("DELETE FROM chunks WHERE work_id = ?", row)
             self.db.execute("DELETE FROM names WHERE work_id = ?", row)
+            self.db.execute("DELETE FROM vectors WHERE work_id = ?", row)
             self.db.execute("DELETE FROM works WHERE id = ?", row)
 
     def _work(self, title: str) -> int:
@@ -131,6 +138,7 @@ class Library:
         if not words:
             return []
         work_id = self._work(title)
+        semantic = self._semantic(work_id, query, horizon, limit * CANDIDATE_FACTOR)
         words += self.aliases(title, words, horizon)
         rows = self.db.execute(
             "SELECT c.ordinal, c.chapter, c.chapter_title, c.text FROM chunks_fts f "
@@ -140,8 +148,53 @@ class Library:
             (_fts_query(words), work_id, horizon, limit * CANDIDATE_FACTOR)).fetchall()
         # Passages covering more distinct query terms first; ties keep bm25 order (sort is stable).
         terms = _terms(words)
-        rows = sorted(rows, key=lambda r: -_coverage(r[3], terms))[:limit]
-        return sorted((Passage(*r) for r in rows), key=lambda p: p.ordinal)
+        rows = sorted(rows, key=lambda r: -_coverage(r[3], terms))
+        if semantic:
+            rows = _fuse(rows, semantic, terms)
+        return sorted((Passage(*r) for r in rows[:limit]), key=lambda p: p.ordinal)
+
+    def embed_work(self, title: str, batch: int = 64, progress=None) -> int:
+        """Embed every passage of a work that has no vector yet for the current model."""
+        if self.embedder is None:
+            raise RuntimeError("No embedder available (pip install fastembed)")
+        work_id, model = self._work(title), self.embedder.name
+        todo = self.db.execute(
+            "SELECT c.ordinal, c.text FROM chunks c WHERE c.work_id = ? AND NOT EXISTS (SELECT 1 FROM vectors v "
+            "WHERE v.work_id = c.work_id AND v.ordinal = c.ordinal AND v.model = ?) ORDER BY c.ordinal",
+            (work_id, model)).fetchall()
+        for start in range(0, len(todo), batch):
+            part = todo[start:start + batch]
+            vectors = self.embedder.embed([text for _, text in part])
+            with self.db:
+                self.db.executemany("INSERT OR REPLACE INTO vectors (work_id, ordinal, model, vec) VALUES (?,?,?,?)",
+                                    [(work_id, o, model, v.tobytes()) for (o, _), v in zip(part, vectors)])
+            if progress:
+                progress(min(start + batch, len(todo)), len(todo))
+        return len(todo)
+
+    def has_vectors(self, title: str) -> bool:
+        if self.embedder is None:
+            return False
+        return self.db.execute("SELECT 1 FROM vectors WHERE work_id = ? AND model = ? LIMIT 1",
+                               (self._work(title), self.embedder.name)).fetchone() is not None
+
+    def _semantic(self, work_id: int, query: str, horizon: int, limit: int) -> list[tuple]:
+        """Nearest passages by meaning. Only vectors of passages at or before the horizon are ever loaded."""
+        if self.embedder is None:
+            return []
+        rows = self.db.execute(
+            "SELECT c.ordinal, c.chapter, c.chapter_title, c.text, v.vec FROM vectors v "
+            "JOIN chunks c ON c.work_id = v.work_id AND c.ordinal = v.ordinal "
+            "WHERE v.work_id = ? AND v.model = ? AND c.ordinal <= ?",
+            (work_id, self.embedder.name, horizon)).fetchall()
+        if not rows:
+            return []
+        import numpy as np
+
+        matrix = np.frombuffer(b"".join(r[4] for r in rows), dtype=np.float32).reshape(len(rows), -1)
+        scores = matrix @ self.embedder.embed([query])[0]
+        best = np.argsort(-scores)[:limit]
+        return [rows[i][:4] for i in best]
 
     def aliases(self, title: str, words: list[str], horizon: int) -> list[str]:
         """Other name parts for the query words, from names first seen at or before the horizon."""
@@ -173,6 +226,25 @@ _STOP = frozenset("a an and are as at be but by for from had has have he her his
 
 def _words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9']+", text.lower().replace("’", "'"))
+
+
+def _fuse(keyword: list[tuple], semantic: list[tuple], terms: list[str], k: int = 60) -> list[tuple]:
+    """Merge keyword and semantic rankings (rows are keyed by ordinal).
+
+    Passages that contain nearly all the query words are exact lookups and stay first; the rest are
+    ordered by weighted reciprocal rank fusion, so paraphrased questions are carried by the semantic side.
+    """
+    needed = max(2, len(terms) - len(terms) // 5)
+    pinned = [row for row in keyword if _coverage(row[3], terms) >= min(needed, len(terms))]
+    fused_keyword = [row for row in keyword if _coverage(row[3], terms) >= min(MIN_KEYWORD_COVERAGE, len(terms))]
+    score, by_ordinal = {}, {}
+    for ranking, weight in ((fused_keyword, KEYWORD_WEIGHT), (semantic, 1.0)):
+        for rank, row in enumerate(ranking):
+            score[row[0]] = score.get(row[0], 0.0) + weight / (k + rank)
+            by_ordinal[row[0]] = row
+    pinned_ids = {row[0] for row in pinned}
+    rest = [by_ordinal[o] for o in sorted(score, key=lambda o: -score[o]) if o not in pinned_ids]
+    return pinned + rest
 
 
 def _terms(words: list[str]) -> list[str]:

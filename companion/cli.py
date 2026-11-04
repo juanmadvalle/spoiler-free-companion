@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .agent import Session, run_agent
 from .answer import ask, recap
+from .embed import default_embedder
 from .ingest import read_book
 from .store import Library
 
@@ -20,6 +21,10 @@ def main(argv=None) -> int:
     add = sub.add_parser("ingest", help="Add an EPUB or .txt you own (processed locally)")
     add.add_argument("file", type=Path)
     add.add_argument("--title", help="Defaults to the file name")
+    add.add_argument("--embed", action="store_true", help="Also build semantic vectors (needs: pip install fastembed)")
+    embed = sub.add_parser("embed", help="Build semantic vectors for a book already ingested")
+    embed.add_argument("title")
+    parser.add_argument("--no-embeddings", action="store_true", help="Keyword search only, even if vectors exist")
 
     sub.add_parser("list", help="List books")
     chap = sub.add_parser("chapters", help="List chapter numbers")
@@ -37,7 +42,7 @@ def main(argv=None) -> int:
             command.add_argument("--verbose", action="store_true", help="With --agent: print each tool call")
 
     args = parser.parse_args(argv)
-    library = Library(args.db)
+    library = Library(args.db, embedder=None if args.no_embeddings else default_embedder())
     try:
         if args.command == "ingest":
             title = args.title or args.file.stem
@@ -45,6 +50,10 @@ def main(argv=None) -> int:
             if not chapters:
                 raise ValueError("No readable chapters found")
             print(f"Ingested '{title}': {len(chapters)} chapters, {library.add_work(title, chapters)} passages.")
+            if args.embed:
+                _embed(library, title)
+        elif args.command == "embed":
+            _embed(library, args.title)
         elif args.command == "list":
             print("\n".join(library.works()) or "No books yet.")
         elif args.command == "chapters":
@@ -71,3 +80,11 @@ def main(argv=None) -> int:
         return 1
     finally:
         library.close()
+
+
+def _embed(library: Library, title: str) -> None:
+    if library.embedder is None:
+        raise RuntimeError("Semantic search needs: pip install fastembed")
+    count = library.embed_work(
+        title, progress=lambda done, total: print(f"\r  embedding {done}/{total}", end="", file=sys.stderr))
+    print(f"\nEmbedded {count} passages with {library.embedder.name}.")
