@@ -23,6 +23,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     text, content='chunks', content_rowid='id', tokenize='porter unicode61 remove_diacritics 2');
 """
 CANDIDATE_FACTOR = 5
+RERANK_POOL = 40  # how many hybrid candidates the cross-encoder re-orders
 KEYWORD_WEIGHT = 0.5  # relative weight of the keyword ranking when fused with the semantic one
 MIN_KEYWORD_COVERAGE = 2  # keyword hits must share at least this many query terms to count in the fusion
 
@@ -36,8 +37,9 @@ class Passage:
 
 
 class Library:
-    def __init__(self, path: Path | str, embedder=None):
+    def __init__(self, path: Path | str, embedder=None, reranker=None):
         self.embedder = embedder  # optional; semantic search is used only for works that have vectors
+        self.reranker = reranker  # optional cross-encoder that re-orders the hybrid candidates
         self.db = sqlite3.connect(path)
         self.db.executescript(SCHEMA)
         self._upgrade_fts()
@@ -150,7 +152,12 @@ class Library:
         terms = _terms(words)
         rows = sorted(rows, key=lambda r: -_coverage(r[3], terms))
         if semantic:
-            rows = _fuse(rows, semantic, terms)
+            pinned, rest = _fuse(rows, semantic, terms)
+            if self.reranker and rest:  # candidates are already horizon-filtered; only their order changes
+                pool = rest[:RERANK_POOL]
+                scores = self.reranker.rerank(query, [r[3] for r in pool])
+                rest = [r for _, r in sorted(zip(scores, pool), key=lambda pair: -pair[0])] + rest[RERANK_POOL:]
+            rows = pinned + rest
         return sorted((Passage(*r) for r in rows[:limit]), key=lambda p: p.ordinal)
 
     def embed_work(self, title: str, batch: int = 64, progress=None) -> int:
@@ -192,7 +199,8 @@ class Library:
         import numpy as np
 
         matrix = np.frombuffer(b"".join(r[4] for r in rows), dtype=np.float32).reshape(len(rows), -1)
-        scores = matrix @ self.embedder.embed([query])[0]
+        embed_query = getattr(self.embedder, "embed_query", self.embedder.embed)
+        scores = matrix @ embed_query([query])[0]
         best = np.argsort(-scores)[:limit]
         return [rows[i][:4] for i in best]
 
@@ -228,8 +236,8 @@ def _words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9']+", text.lower().replace("’", "'"))
 
 
-def _fuse(keyword: list[tuple], semantic: list[tuple], terms: list[str], k: int = 60) -> list[tuple]:
-    """Merge keyword and semantic rankings (rows are keyed by ordinal).
+def _fuse(keyword: list[tuple], semantic: list[tuple], terms: list[str], k: int = 60) -> tuple[list, list]:
+    """Merge keyword and semantic rankings (rows are keyed by ordinal); returns (pinned, rest).
 
     Passages that contain nearly all the query words are exact lookups and stay first; the rest are
     ordered by weighted reciprocal rank fusion, so paraphrased questions are carried by the semantic side.
@@ -244,7 +252,7 @@ def _fuse(keyword: list[tuple], semantic: list[tuple], terms: list[str], k: int 
             by_ordinal[row[0]] = row
     pinned_ids = {row[0] for row in pinned}
     rest = [by_ordinal[o] for o in sorted(score, key=lambda o: -score[o]) if o not in pinned_ids]
-    return pinned + rest
+    return pinned, rest
 
 
 def _terms(words: list[str]) -> list[str]:

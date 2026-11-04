@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Protocol
 
 DEFAULT_MODEL = os.environ.get("COMPANION_EMBED_MODEL", "BAAI/bge-small-en-v1.5")
+RERANK_MODEL = os.environ.get("COMPANION_RERANK_MODEL", "Xenova/ms-marco-MiniLM-L-6-v2")
+BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 CACHE_DIR = Path(os.environ.get("COMPANION_MODEL_DIR", Path.home() / ".cache" / "spoiler-free-companion" / "models"))
 
 
@@ -14,6 +16,12 @@ class Embedder(Protocol):
 
     def embed(self, texts: list[str]):
         """Return an (n, d) float32 array of L2-normalised vectors."""
+        ...
+
+
+class Reranker(Protocol):
+    def rerank(self, query: str, texts: list[str]) -> list[float]:
+        """Relevance score per text (higher is better)."""
         ...
 
 
@@ -33,6 +41,28 @@ class FastEmbedder:
         vectors = np.array(list(self._model.embed(texts)), dtype=np.float32)
         return vectors / np.maximum(np.linalg.norm(vectors, axis=1, keepdims=True), 1e-12)
 
+    def embed_query(self, texts: list[str]):
+        """Queries get the instruction prefix BGE models were trained with; passages do not."""
+        if self.name.startswith("BAAI/bge"):
+            texts = [BGE_QUERY_PREFIX + t for t in texts]
+        return self.embed(texts)
+
+
+class FastReranker:
+    """Cross-encoder that reads the question and a passage together (slower, more precise)."""
+
+    def __init__(self, name: str = RERANK_MODEL):
+        self.name = name
+        self._model = None
+
+    def rerank(self, query: str, texts: list[str]) -> list[float]:
+        if self._model is None:
+            from fastembed.rerank.cross_encoder import TextCrossEncoder
+
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            self._model = TextCrossEncoder(self.name, cache_dir=str(CACHE_DIR))
+        return [float(score) for score in self._model.rerank(query, texts)]
+
 
 def default_embedder() -> Embedder | None:
     """A FastEmbedder when fastembed and numpy are installed, else None (keyword search only)."""
@@ -42,3 +72,11 @@ def default_embedder() -> Embedder | None:
     except ImportError:
         return None
     return FastEmbedder()
+
+
+def default_reranker() -> Reranker | None:
+    try:
+        import fastembed  # noqa: F401
+    except ImportError:
+        return None
+    return FastReranker()

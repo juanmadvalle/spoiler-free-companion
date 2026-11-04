@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .agent import Session, run_agent
 from .answer import ask, recap
-from .embed import default_embedder
+from .embed import default_embedder, default_reranker
 from .ingest import read_book
 from .store import Library
 
@@ -25,6 +25,7 @@ def main(argv=None) -> int:
     embed = sub.add_parser("embed", help="Build semantic vectors for a book already ingested")
     embed.add_argument("title")
     parser.add_argument("--no-embeddings", action="store_true", help="Keyword search only, even if vectors exist")
+    parser.add_argument("--rerank", action="store_true", help="Re-order hybrid candidates with a cross-encoder (slower; no measured gain yet)")
 
     sub.add_parser("list", help="List books")
     chap = sub.add_parser("chapters", help="List chapter numbers")
@@ -42,7 +43,9 @@ def main(argv=None) -> int:
             command.add_argument("--verbose", action="store_true", help="With --agent: print each tool call")
 
     args = parser.parse_args(argv)
-    library = Library(args.db, embedder=None if args.no_embeddings else default_embedder())
+    semantic = not args.no_embeddings
+    library = Library(args.db, embedder=default_embedder() if semantic else None,
+                      reranker=default_reranker() if semantic and args.rerank else None)
     try:
         if args.command == "ingest":
             title = args.title or args.file.stem

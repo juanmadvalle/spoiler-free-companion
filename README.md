@@ -45,7 +45,9 @@ Questions are then matched by meaning as well as by words ("a child weeping" fin
 
 Each passage is embedded on its own, and only the vectors of passages at or before your horizon are ever loaded from the database, so the spoiler guarantee is unchanged; tests check this on all four real books. Passages that contain nearly all the query words stay first (exact lookups), the rest are merged with the semantic ranking.
 
-Measured on the cached real books (`scripts/eval_semantic.py`, 17 hand-written paraphrase questions, hit in the top 5): keyword-only 5/17, hybrid 8/17. Exact-word lookups are unchanged (237/238 in the top 3) and inflected lookups dip slightly (233 to 222 of 238). The question set is small and the model is a compact one, so treat these as indicative; many paraphrases still miss.
+Measured on the cached real books (`scripts/eval_semantic.py`, 31 hand-written paraphrase questions, a relevant passage in the top 5): keyword-only 14/31, hybrid 18/31. Queries get the instruction prefix BGE models expect (worth about one question). Exact-word lookups are essentially unchanged (237 to 236 of 238 in the top 3) and lookups with changed word forms dip (233 to 223 of 238). The question set is small and the model compact, so treat these as indicative; many paraphrases still miss.
+
+`--rerank` adds an optional cross-encoder (`Xenova/ms-marco-MiniLM-L-6-v2`, about 80 MB) that re-orders the top 40 hybrid candidates. In a first comparison it looked like +3 questions, but in the final integrated run it fixed 3 and broke 3 (18/31 either way), so it stays off by default. Larger rerankers (MiniLM-L12, Jina) did worse on this set.
 
 ### Aliases and future questions
 

@@ -38,6 +38,25 @@ class SemanticTests(unittest.TestCase):
         found = self.library.search("B", "merchant silver coins market", 10**6, limit=1)
         self.assertEqual([p.ordinal for p in found], [2])
 
+    def test_reranker_picks_among_candidates_and_never_sees_future_text(self):
+        seen = []
+
+        class PreferLate:
+            def rerank(self, query, texts):
+                seen.extend(texts)
+                return [float(i) for i in range(len(texts))]  # later candidate wins
+
+        self.library.reranker = PreferLate()
+        horizon = self.library.horizon_after_chapter("B", 2)
+        self.library.search("B", "youngster sobbing", horizon, limit=1)
+        self.assertTrue(seen)
+        self.assertTrue(all("Much later" not in text for text in seen))
+        # With everything readable the reranker decides which single passage is returned.
+        seen.clear()
+        top = self.library.search("B", "youngster sobbing", 10**6, limit=1)
+        self.assertEqual(len(top), 1)
+        self.assertTrue(seen)
+
     def test_embedding_is_idempotent_and_reingest_clears_vectors(self):
         self.assertEqual(self.library.embed_work("B"), 0)
         self.assertTrue(self.library.has_vectors("B"))

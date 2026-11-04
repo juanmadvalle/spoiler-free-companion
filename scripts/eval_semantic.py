@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from companion.embed import FastEmbedder  # noqa: E402
+from companion.embed import FastEmbedder, FastReranker  # noqa: E402
 from companion.ingest import read_book  # noqa: E402
 from companion.store import Library  # noqa: E402
 
@@ -33,6 +33,21 @@ CASES = [
     ("Frankenstein", "the monster learns to speak by secretly spying on a poor family", r"cottage|De Lacey"),
     ("Frankenstein", "an explorer writes letters to his sibling from the frozen north", r"Saville|my dear sister"),
     ("Frankenstein", "the young woman who is falsely accused of murdering a child", r"Justine"),
+    # second batch
+    ("Alice", "the girl nearly drowns in a pool made of her own weeping", r"pool of tears"),
+    ("Alice", "a feline that disappears leaving only its smile floating in the air", r"grin without a cat|Cheshire"),
+    ("Alice", "a tea party where it is stuck forever at the same hour", r"six o'clock|Hatter"),
+    ("Alice", "playing cards secretly painting white flowers a different colour", r"painting the roses|paint(ed|ing)? them red"),
+    ("Pride", "at the ball the wealthy newcomer dances with the eldest Bennet daughter", r"Bingley.{0,200}danced|danced.{0,200}Bingley"),
+    ("Pride", "the pompous clergyman cousin asks for her hand and she declines", r"offer of marriage|Collins.{0,200}(proposal|refus)"),
+    ("Pride", "he sends her a long written explanation of his behaviour", r"Be not alarmed, madam"),
+    ("Sherlock", "a gem is hidden inside a bird that was bought for Christmas", r"crop of the goose|carbuncle"),
+    ("Sherlock", "a beggar in the city is actually a respectable man in disguise", r"twisted lip|Hugh Boone"),
+    ("Sherlock", "someone is killed by a snake that crawls through an air vent", r"ventilator|bell-rope"),
+    ("Frankenstein", "the creature begs his maker to build him a mate", r"create a female|female"),
+    ("Frankenstein", "the scientist destroys the half-built partner in a rage", r"tore to pieces"),
+    ("Frankenstein", "the creature reads a famous epic poem and compares himself to the first man", r"Paradise Lost"),
+    ("Frankenstein", "the bride is found dead on the night of the wedding", r"bridal bed|lifeless and inanimate"),
 ]
 
 
@@ -42,24 +57,25 @@ def hits(library: Library, title: str, question: str, pattern: str, k: int) -> b
 
 
 def main(k: int = 5) -> None:
-    embedder = FastEmbedder()
-    results = {"keyword": 0, "hybrid": 0}
+    embedder, reranker = FastEmbedder(), FastReranker()
+    variants = {"keyword": (None, None), "hybrid": (embedder, None), "hybrid+rerank": (embedder, reranker)}
+    results = dict.fromkeys(variants, 0)
     for book, question, pattern in CASES:
-        title = book
         db = DATA / f"eval-{book}.db"
         library = Library(db, embedder=embedder)
-        if title not in library.works():
-            library.add_work(title, read_book(DATA / f"pg{BOOKS[book]}.txt"))
-        library.embed_work(title)
-        hybrid = hits(library, title, question, pattern, k)
-        library.embedder = None
-        keyword = hits(library, title, question, pattern, k)
+        if book not in library.works():
+            library.add_work(book, read_book(DATA / f"pg{BOOKS[book]}.txt"))
+        library.embed_work(book)
+        marks = []
+        for name, (emb, rer) in variants.items():
+            library.embedder, library.reranker = emb, rer
+            ok = hits(library, book, question, pattern, k)
+            results[name] += ok
+            marks.append(f"{name if ok else '-':<14}")
         library.close()
-        results["keyword"] += keyword
-        results["hybrid"] += hybrid
-        print(f"{'keyword' if keyword else '   -   '} {'hybrid' if hybrid else '  -   '}  {book}: {question}")
+        print(" ".join(marks), f"{book}: {question}")
     n = len(CASES)
-    print(f"\nhit@{k}: keyword {results['keyword']}/{n}  hybrid {results['hybrid']}/{n}")
+    print(f"\nhit@{k} of {n}: " + "  ".join(f"{name} {count}" for name, count in results.items()))
 
 
 if __name__ == "__main__":
