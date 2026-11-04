@@ -127,6 +127,14 @@ class Library:
             (self._work(title), horizon, limit)).fetchall()
         return [Passage(*r) for r in reversed(rows)]
 
+    def chapter_passages(self, title: str, chapter: int, horizon: int, limit: int = 8, offset: int = 0) -> list[Passage]:
+        """Passages of one chapter, still capped at the horizon even if the chapter is partly unread."""
+        rows = self.db.execute(
+            "SELECT ordinal, chapter, chapter_title, text FROM chunks "
+            "WHERE work_id = ? AND chapter = ? AND ordinal <= ? ORDER BY ordinal LIMIT ? OFFSET ?",
+            (self._work(title), chapter, horizon, limit, offset)).fetchall()
+        return [Passage(*r) for r in rows]
+
 
 _STOP = frozenset("a an and are as at be but by for from had has have he her his i in is it its of on or "
                   "she that the their them they this to was were what when where which who why will with you "

@@ -24,6 +24,12 @@ python -m companion recap "My Book" --phrase "a line I just read"
 python -m unittest discover -s tests -t .
 ```
 
+### Agent mode
+
+`ask --agent` (needs `ANTHROPIC_API_KEY` and `pip install anthropic`) lets the model call search tools in a loop: `search_passages`, `recent_passages`, `read_chapter` and `ask_user`. Add `--verbose` to print each tool call.
+
+The horizon stays under the harness's control: no tool takes a horizon, book or position argument, extra arguments the model invents are ignored, and every result is capped at the horizon in SQL and re-checked. Tests drive the loop with a scripted fake model that tries to read ahead. Not yet exercised against the live API.
+
 `--phrase` finds your place from a line you remember and prints the match so you can confirm it's the right spot. If a phrase is repeated, pick a more distinctive one.
 
 ## Copyright
