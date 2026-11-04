@@ -28,6 +28,16 @@ python -m companion recap "My Book" --phrase "a line I just read"
 python -m unittest discover -s tests -t .
 ```
 
+### Web interface
+
+```sh
+python -m companion serve          # opens your browser; --port N to change the port, --no-open to skip the browser
+```
+
+A single page where you add a book (EPUB or text), say how far you have read (a finished chapter, or paste a line you remember and it places you), then ask questions or request a recap. Answers show their citations as buttons that open the exact passages used, and an AI settings dialog lets each user paste their own key (the same storage as `key set`). It works in Spanish or English following the browser language, in light or dark mode, and on a phone-sized screen. Your position is remembered per book in the browser.
+
+Because it handles your key, the server is locked down: it listens on `127.0.0.1` only, the link it prints contains a one-time token that every request must carry, requests with a foreign `Host` header (DNS rebinding) or non-JSON bodies (cross-site form posts) are refused, uploads and JSON bodies have size limits, the page is served with a strict Content-Security-Policy (no external resources, no inline handlers), the uploaded file name is never used as a path, and the key is never sent back to the page (only a masked form). Chapter numbers beyond the end of a book are rejected instead of marking the whole book as read.
+
 ### Choosing an LLM
 
 Every user brings their own key; nothing is bundled and nothing is stored in the repository. The easiest way:

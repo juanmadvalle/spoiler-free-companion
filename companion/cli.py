@@ -31,6 +31,9 @@ def main(argv=None) -> int:
 
     sub.add_parser("list", help="List books")
     sub.add_parser("models", help="List models offered by the configured LLM endpoint")
+    serve = sub.add_parser("serve", help="Start the local web interface (127.0.0.1 only)")
+    serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument("--no-open", action="store_true", help="Do not open the browser automatically")
     key = sub.add_parser("key", help="Manage your own LLM API key (stored on this computer only)")
     key.add_argument("action", choices=("set", "status", "clear"))
     key.add_argument("--provider", choices=keystore.PROVIDERS, default="gemini")
@@ -54,6 +57,11 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     if args.command == "key":
         return _key(args)
+    if args.command == "serve":
+        from .web import serve
+
+        serve(args.db, args.port, open_browser=not args.no_open)
+        return 0
     semantic = not args.no_embeddings
     library = Library(args.db, embedder=default_embedder() if semantic else None,
                       reranker=default_reranker() if semantic and args.rerank else None)

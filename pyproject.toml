@@ -14,3 +14,6 @@ companion = "companion.cli:main"
 
 [tool.setuptools]
 packages = ["companion"]
+
+[tool.setuptools.package-data]
+companion = ["static/*.html"]

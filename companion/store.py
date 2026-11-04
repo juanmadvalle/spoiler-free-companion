@@ -91,6 +91,11 @@ class Library:
             raise KeyError(f"Unknown work: {title}")
         return row[0]
 
+    def remove_work(self, title: str) -> None:
+        with self.db:
+            self._work(title)  # KeyError when unknown
+            self._delete_work(title)
+
     def works(self) -> list[str]:
         return [r[0] for r in self.db.execute("SELECT title FROM works ORDER BY title")]
 
@@ -102,11 +107,12 @@ class Library:
 
     def horizon_after_chapter(self, title: str, chapter: int) -> int:
         """Horizon for 'I have finished this chapter' (inclusive)."""
-        row = self.db.execute("SELECT MAX(ordinal) FROM chunks WHERE work_id = ? AND chapter <= ?",
-                              (self._work(title), chapter)).fetchone()
-        if row[0] is None:
-            raise ValueError(f"Chapter {chapter} not found")
-        return row[0]
+        work_id = self._work(title)
+        last = self.db.execute("SELECT MAX(chapter) FROM chunks WHERE work_id = ?", (work_id,)).fetchone()[0]
+        if last is None or not 1 <= chapter <= last:  # a typo like 30 for 3 must not mark the whole book as read
+            raise ValueError(f"Chapter {chapter} not found (this book has chapters 1-{last})")
+        return self.db.execute("SELECT MAX(ordinal) FROM chunks WHERE work_id = ? AND chapter <= ?",
+                               (work_id, chapter)).fetchone()[0]
 
     def locate(self, title: str, phrase: str, min_ratio: float = 0.6) -> tuple[int, Passage]:
         """Find where the reader is from a remembered phrase; returns (horizon, matched passage).

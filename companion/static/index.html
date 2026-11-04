@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spoiler-free companion</title>
+<style nonce="__NONCE__">
+:root {
+  color-scheme: light dark;
+  --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1d1b; --muted: #5f5e58; --line: #dedbd2;
+  --accent: #2a5d9f; --accent-ink: #ffffff; --soft: #e8eef7; --ok: #1f6b3a; --warn: #8a5a00; --bad: #a12b2b;
+  --radius: 10px; --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 14px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #151618; --panel: #1e2023; --ink: #ecebe6; --muted: #a3a29b; --line: #34363a;
+    --accent: #7aa9e6; --accent-ink: #0f1a2b; --soft: #26303f; --ok: #6fcf97; --warn: #e6b34d; --bad: #f08a8a;
+    --shadow: none; }
+}
+* { box-sizing: border-box; }
+html { font-size: 16px; }
+body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.5;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+button, input, select, textarea { font: inherit; color: inherit; }
+header.top { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line);
+  background: var(--panel); position: sticky; top: 0; z-index: 5; }
+header.top h1 { font-size: 1.05rem; margin: 0; font-weight: 650; flex: 1; }
+.layout { display: grid; grid-template-columns: 300px 1fr; gap: 20px; padding: 20px; max-width: 1180px; margin: 0 auto; }
+@media (max-width: 820px) { .layout { grid-template-columns: 1fr; padding: 12px; } aside { order: 2; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; }
+.card + .card { margin-top: 16px; }
+h2 { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; font-weight: 650; }
+label { display: block; font-size: .9rem; color: var(--muted); margin: 10px 0 4px; }
+input[type=text], input[type=password], input[type=file], select, textarea {
+  width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+textarea { min-height: 84px; resize: vertical; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button { cursor: pointer; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 9px 14px; min-height: 40px; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button.link { border: 0; background: none; color: var(--accent); padding: 2px 4px; min-height: 0; text-decoration: underline; }
+button:disabled { opacity: .55; cursor: not-allowed; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row > .grow { flex: 1; min-width: 160px; }
+.muted { color: var(--muted); font-size: .9rem; }
+.books { list-style: none; margin: 0; padding: 0; }
+.books li { display: flex; align-items: center; gap: 6px; border-radius: 8px; }
+.books li.active { background: var(--soft); }
+.books .pick { flex: 1; text-align: left; border: 0; background: none; padding: 10px; border-radius: 8px; }
+.books .pick small { display: block; color: var(--muted); }
+.badge { display: inline-block; font-size: .75rem; padding: 2px 8px; border-radius: 999px; background: var(--soft); color: var(--ink); }
+.badge.ok { color: var(--ok); } .badge.warn { color: var(--warn); } .badge.bad { color: var(--bad); }
+.pos { margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: var(--soft); }
+.empty { text-align: center; padding: 48px 16px; }
+.empty ol { text-align: left; display: inline-block; margin: 16px 0 0; padding-left: 20px; }
+.answer { border-left: 4px solid var(--accent); }
+.answer .text { white-space: pre-wrap; margin: 8px 0; }
+.answer.refused { border-left-color: var(--warn); }
+.cite { border: 1px solid var(--line); background: var(--soft); border-radius: 6px; padding: 0 6px; min-height: 0; font-size: .85rem; }
+details.sources { margin-top: 10px; }
+details.sources summary { cursor: pointer; color: var(--muted); }
+.passage { margin: 8px 0; padding: 8px 10px; border-radius: 8px; background: var(--bg); font-size: .92rem; }
+.passage.flash { outline: 2px solid var(--accent); }
+.passage .meta { color: var(--muted); font-size: .8rem; }
+.progress { height: 6px; background: var(--line); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+.progress > span { display: block; height: 100%; background: var(--accent); width: 0; }
+dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); max-width: 520px; width: calc(100% - 32px); padding: 20px; }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+.err { color: var(--bad); }
+.sr { position: absolute; left: -9999px; }
+@media (prefers-reduced-motion: no-preference) { .passage { transition: outline-color .3s; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1 data-i18n="title"></h1>
+  <span id="llmBadge" class="badge" role="status"></span>
+  <button id="openSettings" data-i18n="settings"></button>
+</header>
+
+<main class="layout">
+  <aside>
+    <section class="card" aria-labelledby="libTitle">
+      <h2 id="libTitle" data-i18n="library"></h2>
+      <ul id="books" class="books"></ul>
+      <p id="noBooks" class="muted" data-i18n="noBooks"></p>
+    </section>
+    <section class="card" aria-labelledby="addTitle">
+      <h2 id="addTitle" data-i18n="addBook"></h2>
+      <form id="addForm">
+        <label for="file" data-i18n="file"></label>
+        <input id="file" type="file" accept=".epub,.txt" required>
+        <label for="bookTitle" data-i18n="bookTitle"></label>
+        <input id="bookTitle" type="text" maxlength="200">
+        <label class="row"><input id="embed" type="checkbox"> <span data-i18n="embed"></span></label>
+        <p id="embedHelp" class="muted"></p>
+        <button class="primary" type="submit" data-i18n="add"></button>
+        <p id="addStatus" class="muted" role="status"></p>
+        <div id="jobBar" class="progress" hidden><span></span></div>
+      </form>
+    </section>
+  </aside>
+
+  <section id="content">
+    <div id="empty" class="card empty">
+      <h2 data-i18n="welcomeTitle"></h2>
+      <p class="muted" data-i18n="welcome"></p>
+      <ol><li data-i18n="step1"></li><li data-i18n="step2"></li><li data-i18n="step3"></li></ol>
+    </div>
+
+    <div id="bookView" hidden>
+      <section class="card" aria-labelledby="posTitle">
+        <h2 id="posTitle" data-i18n="where"></h2>
+        <h3 id="bookName" class="sr"></h3>
+        <label for="chapter" data-i18n="finishedChapter"></label>
+        <select id="chapter"></select>
+        <label for="phrase" data-i18n="orPhrase"></label>
+        <div class="row">
+          <input id="phrase" class="grow" type="text" data-i18n-ph="phrasePh">
+          <button id="locate" type="button" data-i18n="locate"></button>
+        </div>
+        <p id="locateMsg" class="muted" role="status"></p>
+        <div id="pos" class="pos"></div>
+      </section>
+
+      <section class="card" aria-labelledby="askTitle">
+        <h2 id="askTitle" data-i18n="ask"></h2>
+        <label for="question" class="sr" data-i18n="question"></label>
+        <textarea id="question" data-i18n-ph="questionPh"></textarea>
+        <div class="row">
+          <button id="askBtn" class="primary" type="button" data-i18n="askBtn"></button>
+          <button id="recapBtn" type="button" data-i18n="recapBtn"></button>
+          <label class="row" id="agentWrap"><input id="agent" type="checkbox"> <span data-i18n="agent"></span></label>
+        </div>
+        <p id="askMsg" class="muted" role="status"></p>
+      </section>
+
+      <div id="answers" aria-live="polite"></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="settings" aria-labelledby="setTitle">
+  <form method="dialog" id="setForm">
+    <h2 id="setTitle" data-i18n="llmSettings"></h2>
+    <p class="muted" data-i18n="llmIntro"></p>
+    <p id="current" class="muted"></p>
+    <label for="provider" data-i18n="provider"></label>
+    <select id="provider">
+      <option value="gemini">Google Gemini</option>
+      <option value="anthropic">Anthropic</option>
+      <option value="custom">Ollama / otro compatible</option>
+    </select>
+    <label for="apiKey" data-i18n="apiKey"></label>
+    <input id="apiKey" type="password" autocomplete="off" spellcheck="false">
+    <p class="muted" id="keyHelp"></p>
+    <label for="baseUrl" data-i18n="baseUrl"></label>
+    <input id="baseUrl" type="text" placeholder="http://localhost:11434/v1" autocomplete="off">
+    <label for="model" data-i18n="model"></label>
+    <div class="row">
+      <input id="model" class="grow" type="text" list="modelList" autocomplete="off">
+      <datalist id="modelList"></datalist>
+      <button id="listModels" type="button" data-i18n="listModels"></button>
+    </div>
+    <p id="setMsg" class="muted" role="status"></p>
+    <div class="row">
+      <button class="primary" id="saveKey" type="button" data-i18n="save"></button>
+      <button id="clearKey" type="button" data-i18n="remove"></button>
+      <button id="closeSettings" type="button" data-i18n="close"></button>
+    </div>
+    <p class="muted" data-i18n="storageNote"></p>
+  </form>
+</dialog>
+
+<script nonce="__NONCE__">
+"use strict";
+const TOKEN = "__TOKEN__";
+const LANG = (navigator.language || "en").toLowerCase().startsWith("es") ? "es" : "en";
+const TEXT = {
+  es: {
+    title: "Compañero de lectura sin spoilers", settings: "Ajustes de IA", library: "Mi biblioteca",
+    noBooks: "Aún no has añadido ningún libro.", addBook: "Añadir un libro", file: "Archivo (.epub o .txt)",
+    bookTitle: "Título (opcional)", embed: "Búsqueda por significado (más lenta)", add: "Añadir libro",
+    embedOn: "Se calcula una sola vez; una novela tarda unos minutos.",
+    embedOff: "No disponible: instala fastembed (pip install fastembed).",
+    welcomeTitle: "Pregunta sobre lo que has leído, sin que te destripen lo que viene",
+    welcome: "Todo se procesa en tu equipo. Solo se usa texto anterior a tu posición.",
+    step1: "Añade un libro que tengas (EPUB o texto).", step2: "Indica hasta dónde has leído.", step3: "Pregunta o pide un resumen.",
+    where: "¿Dónde vas?", finishedChapter: "He terminado el capítulo…", orPhrase: "…o pega una frase que recuerdes",
+    phrasePh: "Una frase del último pasaje que leíste", locate: "Localizar", question: "Pregunta",
+    questionPh: "Por ejemplo: ¿Quién es ese personaje y qué quiere?", ask: "Pregunta", askBtn: "Preguntar",
+    recapBtn: "Resumen de dónde voy", agent: "Modo agente (la IA busca por su cuenta)",
+    notStarted: "Aún no he empezado", finished: "Terminado: ", position: "Posición", at: "Capítulo ",
+    located: "Te he situado en el capítulo", confirmLocate: "¿Es aquí? Si no, prueba con una frase más larga.",
+    noMatch: "No encuentro esa frase; prueba con otra más larga o exacta.",
+    refusedMode: "No respondida: depende de lo que viene después", llmMode: "Respuesta de IA", passagesMode: "Fragmentos (sin IA configurada)",
+    agentMode: "Respuesta de IA con herramientas", sources: "Pasajes usados", tools: "Búsquedas del agente", thinking: "Pensando…",
+    llmOk: "IA: lista", llmNone: "Sin IA: se muestran fragmentos", llmIntro: "Cada usuario usa su propia clave. Se guarda solo en este equipo y nunca se sube a ningún sitio.",
+    llmSettings: "Ajustes de IA", provider: "Proveedor", apiKey: "Clave de API", baseUrl: "Dirección del servidor (solo Ollama/otro)",
+    model: "Modelo (opcional)", listModels: "Ver modelos", save: "Guardar", remove: "Quitar clave", close: "Cerrar",
+    storageNote: "La clave se guarda en el almacén del sistema si tienes keyring; si no, en un archivo de tu carpeta de usuario sin cifrar.",
+    keyHelpGemini: "Gratis en aistudio.google.com/apikey (con cuenta personal). Debe empezar por AIza. En el plan gratuito Google puede usar el texto enviado.",
+    keyHelpAnthropic: "Se crea en console.anthropic.com (de pago).", keyHelpCustom: "Para Ollama no hace falta clave.",
+    stored: "Guardada: ", none: "ninguna", saved: "Guardado.", removed: "Clave quitada.", needKey: "Pega una clave.",
+    del: "Quitar", confirmDel: "¿Quitar este libro de la biblioteca?", chapters: " capítulos", semantic: "significado",
+    adding: "Procesando…", added: "Añadido: ", embedding: "Calculando vectores… ", error: "Error: ", askFirst: "Escribe una pregunta.",
+  },
+  en: {
+    title: "Spoiler-free reading companion", settings: "AI settings", library: "My library",
+    noBooks: "You haven't added a book yet.", addBook: "Add a book", file: "File (.epub or .txt)",
+    bookTitle: "Title (optional)", embed: "Search by meaning (slower)", add: "Add book",
+    embedOn: "Computed once; a novel takes a few minutes.", embedOff: "Not available: install fastembed (pip install fastembed).",
+    welcomeTitle: "Ask about what you've read, without being spoiled",
+    welcome: "Everything is processed on your computer. Only text before your position is used.",
+    step1: "Add a book you own (EPUB or text).", step2: "Say how far you have read.", step3: "Ask a question or request a recap.",
+    where: "Where are you?", finishedChapter: "I have finished chapter…", orPhrase: "…or paste a line you remember",
+    phrasePh: "A line from the last passage you read", locate: "Locate", question: "Question",
+    questionPh: "For example: Who is that character and what do they want?", ask: "Ask", askBtn: "Ask",
+    recapBtn: "Recap where I am", agent: "Agent mode (the AI searches on its own)",
+    notStarted: "I haven't started", finished: "Finished: ", position: "Position", at: "Chapter ",
+    located: "I placed you in chapter", confirmLocate: "Is this right? If not, try a longer line.",
+    noMatch: "I can't find that line; try a longer or more exact one.",
+    refusedMode: "Not answered: it depends on what comes later", llmMode: "AI answer", passagesMode: "Passages (no AI configured)",
+    agentMode: "AI answer with tools", sources: "Passages used", tools: "Agent searches", thinking: "Thinking…",
+    llmOk: "AI ready", llmNone: "No AI: showing passages", llmIntro: "Each user brings their own key. It is stored only on this computer and never uploaded.",
+    llmSettings: "AI settings", provider: "Provider", apiKey: "API key", baseUrl: "Server address (Ollama/other only)",
+    model: "Model (optional)", listModels: "List models", save: "Save", remove: "Remove key", close: "Close",
+    storageNote: "The key goes to the system credential store if keyring is installed; otherwise to an unencrypted file in your home folder.",
+    keyHelpGemini: "Free at aistudio.google.com/apikey (personal account). It must start with AIza. On the free tier Google may use the text sent.",
+    keyHelpAnthropic: "Created at console.anthropic.com (paid).", keyHelpCustom: "Ollama needs no key.",
+    stored: "Stored: ", none: "none", saved: "Saved.", removed: "Key removed.", needKey: "Paste a key.",
+    del: "Remove", confirmDel: "Remove this book from the library?", chapters: " chapters", semantic: "meaning",
+    adding: "Processing…", added: "Added: ", embedding: "Computing vectors… ", error: "Error: ", askFirst: "Type a question.",
+  },
+};
+const t = (key) => TEXT[LANG][key] ?? key;
+const $ = (id) => document.getElementById(id);
+
+async function api(path, options = {}) {
+  const response = await fetch(path, { ...options, headers: { "X-Token": TOKEN, ...(options.headers || {}) } });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || response.statusText);
+  return data;
+}
+const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+let state = { books: [], embeddings_available: false, llm: {} };
+let current = null;      // title of the selected book
+let chapters = [];       // [{number, title}] of the selected book
+
+function applyText() {
+  document.documentElement.lang = LANG;
+  document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
+}
+
+// ---- position, remembered per book in this browser ------------------------------------------------------------
+const posKey = (title) => "pos:" + title;
+const getPos = (title) => { try { return JSON.parse(localStorage.getItem(posKey(title))) || { chapter: 0 }; } catch { return { chapter: 0 }; } };
+const setPos = (title, pos) => localStorage.setItem(posKey(title), JSON.stringify(pos));
+
+function positionBody() {
+  const pos = getPos(current);
+  return pos.ordinal != null ? { title: current, ordinal: pos.ordinal } : { title: current, chapter: pos.chapter || 0 };
+}
+function describePosition() {
+  const pos = getPos(current);
+  const box = $("pos");
+  box.textContent = "";
+  const strong = document.createElement("strong");
+  strong.textContent = t("position") + ": ";
+  box.append(strong);
+  if (pos.ordinal != null) box.append(pos.label || "");
+  else if (!pos.chapter) box.append(t("notStarted"));
+  else {
+    const c = chapters.find((x) => x.number === pos.chapter);
+    box.append(t("finished") + pos.chapter + (c ? ". " + c.title : ""));
+  }
+}
+
+// ---- library ----------------------------------------------------------------------------------------------------
+function renderBooks() {
+  const list = $("books");
+  list.textContent = "";
+  $("noBooks").hidden = state.books.length > 0;
+  for (const book of state.books) {
+    const item = document.createElement("li");
+    if (book.title === current) item.className = "active";
+    const pick = document.createElement("button");
+    pick.className = "pick";
+    pick.type = "button";
+    pick.textContent = book.title;
+    const small = document.createElement("small");
+    small.textContent = book.chapters + t("chapters") + (book.semantic ? " · " + t("semantic") : "");
+    pick.append(small);
+    pick.addEventListener("click", () => selectBook(book.title));
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "link";
+    del.textContent = t("del");
+    del.setAttribute("aria-label", t("del") + ": " + book.title);
+    del.addEventListener("click", async () => {
+      if (!confirm(t("confirmDel"))) return;
+      await post("/api/delete", { title: book.title });
+      if (current === book.title) current = null;
+      await refresh();
+    });
+    item.append(pick, del);
+    list.append(item);
+  }
+}
+
+function renderLlm() {
+  const badge = $("llmBadge");
+  const ok = state.llm && state.llm.configured;
+  badge.textContent = ok ? t("llmOk") : t("llmNone");
+  badge.className = "badge " + (ok ? "ok" : "warn");
+  $("agentWrap").hidden = !ok;
+  $("embed").disabled = !state.embeddings_available;
+  $("embedHelp").textContent = state.embeddings_available ? t("embedOn") : t("embedOff");
+}
+
+async function refresh() {
+  state = await api("/api/state");
+  renderBooks();
+  renderLlm();
+  const present = state.books.some((b) => b.title === current);
+  if (!present) current = null;
+  $("empty").hidden = current != null;
+  $("bookView").hidden = current == null;
+  if (current) await loadChapters();
+}
+
+async function loadChapters() {
+  chapters = await api("/api/chapters?title=" + encodeURIComponent(current));
+  const select = $("chapter");
+  select.textContent = "";
+  const first = document.createElement("option");
+  first.value = "0";
+  first.textContent = t("notStarted");
+  select.append(first);
+  for (const c of chapters) {
+    const option = document.createElement("option");
+    option.value = String(c.number);
+    option.textContent = c.number + ". " + c.title;
+    select.append(option);
+  }
+  const pos = getPos(current);
+  select.value = pos.ordinal != null ? "0" : String(pos.chapter || 0);
+  describePosition();
+}
+
+async function selectBook(title) {
+  current = title;
+  $("answers").textContent = "";
+  $("locateMsg").textContent = "";
+  $("bookName").textContent = title;
+  $("empty").hidden = true;
+  $("bookView").hidden = false;
+  renderBooks();
+  await loadChapters();
+}
+
+$("chapter").addEventListener("change", () => {
+  setPos(current, { chapter: Number($("chapter").value) });
+  $("locateMsg").textContent = "";
+  describePosition();
+});
+
+$("locate").addEventListener("click", async () => {
+  const phrase = $("phrase").value.trim();
+  if (!phrase) return;
+  $("locateMsg").textContent = t("thinking");
+  try {
+    const found = await post("/api/locate", { title: current, phrase });
+    const label = t("at") + found.chapter + ". " + found.chapter_title;
+    setPos(current, { ordinal: found.ordinal, chapter: found.chapter, label });
+    $("chapter").value = "0";
+    $("locateMsg").textContent = t("located") + " " + found.chapter + ": «" + found.excerpt.slice(0, 140) + "…» " + t("confirmLocate");
+    describePosition();
+  } catch (error) {
+    $("locateMsg").textContent = error.message.includes("No close match") ? t("noMatch") : t("error") + error.message;
+  }
+});
+
+// ---- adding books -----------------------------------------------------------------------------------------------
+$("addForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const file = $("file").files[0];
+  if (!file) return;
+  $("addStatus").textContent = t("adding");
+  try {
+    const query = new URLSearchParams({ filename: file.name, title: $("bookTitle").value.trim(), embed: $("embed").checked ? "1" : "0" });
+    const result = await api("/api/ingest?" + query, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
+    $("addStatus").textContent = t("added") + result.title;
+    $("addForm").reset();
+    await refresh();
+    await selectBook(result.title);
+    if (result.job) watchJob(result.job);
+  } catch (error) {
+    $("addStatus").textContent = t("error") + error.message;
+  }
+});
+
+function watchJob(id) {
+  const bar = $("jobBar");
+  bar.hidden = false;
+  const timer = setInterval(async () => {
+    try {
+      const job = await api("/api/jobs/" + id);
+      const share = job.total ? job.done / job.total : 0;
+      bar.firstElementChild.style.width = Math.round(share * 100) + "%";
+      $("addStatus").textContent = t("embedding") + (job.total ? job.done + "/" + job.total : "");
+      if (job.state !== "running") {
+        clearInterval(timer);
+        bar.hidden = true;
+        $("addStatus").textContent = job.state === "error" ? t("error") + job.error : "";
+        await refresh();
+      }
+    } catch (error) {
+      clearInterval(timer);
+      $("addStatus").textContent = t("error") + error.message;
+    }
+  }, 1500);
+}
+
+// ---- asking -----------------------------------------------------------------------------------------------------
+function renderAnswerText(container, text) {
+  const pieces = text.split(/(\[\d+(?:\s*,\s*\d+)*\])/);
+  for (const piece of pieces) {
+    const match = /^\[(\d+(?:\s*,\s*\d+)*)\]$/.exec(piece);
+    if (!match) { container.append(document.createTextNode(piece)); continue; }
+    for (const number of match[1].split(/\s*,\s*/)) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "cite";
+      button.textContent = "[" + number + "]";
+      button.addEventListener("click", () => {
+        const card = container.closest(".answer");
+        const target = card.querySelector('[data-ordinal="' + number + '"]');
+        if (!target) return;
+        card.querySelector("details.sources").open = true;
+        target.classList.add("flash");
+        target.scrollIntoView({ block: "nearest" });
+        setTimeout(() => target.classList.remove("flash"), 1600);
+      });
+      container.append(button);
+    }
+  }
+}
+
+function showAnswer(question, data) {
+  const card = document.createElement("article");
+  card.className = "card answer" + (data.mode === "passages" && !data.passages.length ? " refused" : "");
+  const head = document.createElement("div");
+  head.className = "row";
+  const badge = document.createElement("span");
+  const refused = data.answer.startsWith("That depends on what comes after");
+  badge.className = "badge " + (refused ? "warn" : data.mode === "passages" ? "warn" : "ok");
+  badge.textContent = refused ? t("refusedMode") : data.mode === "agent" ? t("agentMode") : data.mode === "llm" ? t("llmMode") : t("passagesMode");
+  const q = document.createElement("strong");
+  q.textContent = question;
+  head.append(badge, q);
+  const body = document.createElement("div");
+  body.className = "text";
+  renderAnswerText(body, data.answer);
+  card.append(head, body);
+  if (data.tools && data.tools.length) {
+    const tools = document.createElement("p");
+    tools.className = "muted";
+    tools.textContent = t("tools") + ": " + data.tools.join(" · ");
+    card.append(tools);
+  }
+  if (data.passages && data.passages.length) {
+    const details = document.createElement("details");
+    details.className = "sources";
+    const summary = document.createElement("summary");
+    summary.textContent = t("sources") + " (" + data.passages.length + ")";
+    details.append(summary);
+    for (const p of data.passages) {
+      const item = document.createElement("div");
+      item.className = "passage";
+      item.dataset.ordinal = String(p.ordinal);
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = "[" + p.ordinal + "] " + t("at") + p.chapter + " · " + p.chapter_title;
+      const text = document.createElement("div");
+      text.textContent = p.text;
+      item.append(meta, text);
+      details.append(item);
+    }
+    card.append(details);
+  }
+  $("answers").prepend(card);
+}
+
+async function run(kind) {
+  const question = $("question").value.trim();
+  if (kind === "ask" && !question) { $("askMsg").textContent = t("askFirst"); return; }
+  $("askMsg").textContent = t("thinking");
+  $("askBtn").disabled = $("recapBtn").disabled = true;
+  try {
+    const body = { ...positionBody(), question, agent: $("agent").checked && !$("agentWrap").hidden };
+    const data = await post(kind === "ask" ? "/api/ask" : "/api/recap", body);
+    showAnswer(kind === "ask" ? question : t("recapBtn"), data);
+    $("askMsg").textContent = "";
+  } catch (error) {
+    $("askMsg").textContent = t("error") + error.message;
+  } finally {
+    $("askBtn").disabled = $("recapBtn").disabled = false;
+  }
+}
+$("askBtn").addEventListener("click", () => run("ask"));
+$("recapBtn").addEventListener("click", () => run("recap"));
+$("question").addEventListener("keydown", (event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) run("ask"); });
+
+// ---- settings ---------------------------------------------------------------------------------------------------
+function keyHelp() {
+  const provider = $("provider").value;
+  $("keyHelp").textContent = t(provider === "gemini" ? "keyHelpGemini" : provider === "anthropic" ? "keyHelpAnthropic" : "keyHelpCustom");
+  $("baseUrl").disabled = provider !== "custom";
+}
+$("provider").addEventListener("change", keyHelp);
+$("openSettings").addEventListener("click", () => {
+  const llm = state.llm || {};
+  $("current").textContent = t("stored") + (llm.stored_provider ? llm.stored_provider + " " + llm.key : t("none")) + (llm.model ? " · " + llm.model : "");
+  if (llm.stored_provider) $("provider").value = llm.stored_provider;
+  $("apiKey").value = "";
+  $("setMsg").textContent = "";
+  keyHelp();
+  $("settings").showModal();
+});
+$("closeSettings").addEventListener("click", () => $("settings").close());
+$("setForm").addEventListener("submit", (event) => event.preventDefault());
+$("apiKey").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); $("saveKey").click(); } });
+$("saveKey").addEventListener("click", async () => {
+  const provider = $("provider").value;
+  const apiKey = $("apiKey").value.trim();
+  if (!apiKey && provider !== "custom") { $("setMsg").textContent = t("needKey"); return; }
+  try {
+    state = await post("/api/settings", { provider, api_key: apiKey, base_url: $("baseUrl").value.trim(), model: $("model").value.trim() });
+    $("apiKey").value = "";
+    $("setMsg").textContent = t("saved");
+    renderLlm();
+  } catch (error) { $("setMsg").textContent = t("error") + error.message; }
+});
+$("clearKey").addEventListener("click", async () => {
+  state = await post("/api/settings/clear", {});
+  $("setMsg").textContent = t("removed");
+  renderLlm();
+});
+$("listModels").addEventListener("click", async () => {
+  try {
+    const { models } = await api("/api/models");
+    const list = $("modelList");
+    list.textContent = "";
+    for (const name of models) { const option = document.createElement("option"); option.value = name; list.append(option); }
+    $("setMsg").textContent = models.length + " modelos";
+  } catch (error) { $("setMsg").textContent = t("error") + error.message; }
+});
+
+applyText();
+refresh().catch((error) => { $("noBooks").hidden = false; $("noBooks").textContent = t("error") + error.message; });
+</script>
+</body>
+</html>
