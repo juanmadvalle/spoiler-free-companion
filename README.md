@@ -11,6 +11,10 @@ The guarantee is structural, not a prompt instruction:
 3. The model only receives those passages and must cite them. If they don't answer the question, it says so.
 4. `check_horizon` fails loudly if a passage past the horizon is ever retrieved, and the tests plant secret words in later chapters and try hostile queries to prove none leak.
 
+`tests/test_real_books.py` repeats this on four real public-domain books (Sherlock Holmes, Pride and Prejudice, Alice, Frankenstein; downloaded from Project Gutenberg and cached in `tests/data/`, skipped offline). For many reading positions it takes the words that appear only *after* that point, queries with them through every read path (search, recap, chapter reads, the agent tools, even with a forged `horizon` argument) and fails if any appears. It also checks that characters are invisible until their first chapter and that `--phrase` locates the right chapter (318 of 319 sampled phrases, none placed too late). Deliberately breaking the filter makes these tests fail.
+
+Plain-text ingestion drops everything before the first chapter heading and prefaces, introductions and notes, since they often reveal the plot.
+
 ## Usage
 
 Python 3.10+, standard library only. The LLM is optional: without `ANTHROPIC_API_KEY` it prints the relevant passages instead of a written answer. With a key (and `pip install anthropic`) it answers in prose; set `COMPANION_MODEL` to change the model.

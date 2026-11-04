@@ -1,0 +1,141 @@
+"""Anti-spoiler checks on real public-domain books (Project Gutenberg), downloaded once and cached.
+
+Skipped when a book is not cached and cannot be downloaded.
+"""
+import re
+import unittest
+import urllib.request
+from pathlib import Path
+
+from companion import answer
+from companion.agent import Session
+from companion.ingest import chunk, read_book
+from companion.store import Library, _words
+
+DATA = Path(__file__).parent / "data"
+BOOKS = {  # Gutenberg id -> (title, expected chapter count)
+    1661: ("Sherlock Holmes", 12),
+    1342: ("Pride and Prejudice", 61),
+    11: ("Alice in Wonderland", 12),
+    84: ("Frankenstein", 28),  # 4 letters + 24 chapters
+}
+MIN_WORD = 5
+SAMPLE = 40
+
+
+def fetch(book_id: int) -> Path | None:
+    path = DATA / f"pg{book_id}.txt"
+    if not path.exists():
+        try:
+            DATA.mkdir(exist_ok=True)
+            with urllib.request.urlopen(f"https://www.gutenberg.org/cache/epub/{book_id}/pg{book_id}.txt", timeout=30) as r:
+                path.write_bytes(r.read())
+        except OSError:
+            return None
+    return path
+
+
+def spread(items: list, count: int) -> list:
+    """Deterministic, evenly spaced sample."""
+    step = max(1, len(items) // count)
+    return items[::step][:count]
+
+
+class RealBookTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.books = {}
+        for book_id, (title, _) in BOOKS.items():
+            path = fetch(book_id)
+            if path:
+                chapters = read_book(path)
+                library = Library(":memory:")
+                library.add_work(title, chapters)
+                words = [{w for p in c.paragraphs for w in _words(p) if len(w) >= MIN_WORD} for c in chapters]
+                cls.books[title] = (library, chapters, words)
+
+    @classmethod
+    def tearDownClass(cls):
+        for library, _, _ in cls.books.values():
+            library.close()
+
+    def each_book(self):
+        if not self.books:
+            self.skipTest("Real books unavailable (offline and not cached)")
+        for title, data in self.books.items():
+            with self.subTest(book=title):
+                yield title, *data
+
+    def test_chapter_counts_and_no_boilerplate(self):
+        expected = {title: count for title, count in BOOKS.values()}
+        for title, library, chapters, _ in self.each_book():
+            self.assertEqual(len(chapters), expected[title])
+            everything = " ".join(p for c in chapters for p in c.paragraphs).lower()
+            for banned in ("project gutenberg", "saintsbury"):
+                self.assertNotIn(banned, everything)
+
+    def test_future_only_vocabulary_never_reaches_any_read_path(self):
+        for title, library, chapters, words in self.each_book():
+            for k in spread(list(range(1, len(chapters))), 15):
+                seen = set().union(*words[:k])
+                future_only = sorted(set().union(*words[k:]) - seen)
+                self.assertTrue(future_only, f"no future-only words after chapter {k}")
+                horizon = library.horizon_after_chapter(title, k)
+                session = Session(library, title, horizon)
+                queries = [" ".join(spread(future_only, SAMPLE))] + spread(future_only, SAMPLE)
+                results = []
+                for query in queries:
+                    results += library.search(title, query, horizon, limit=50)
+                    results += answer_context_passages(library, title, query, horizon)
+                    session.run_tool("search_passages", {"query": query, "horizon": 10**9})
+                results += library.recent(title, horizon, limit=500)
+                for chapter in range(k + 1, len(chapters) + 1):
+                    self.assertEqual(library.chapter_passages(title, chapter, horizon, limit=500), [])
+                    self.assertNotIn("[", session.run_tool("read_chapter", {"chapter": chapter})[:1])
+                for passage in results:
+                    self.assertLessEqual(passage.ordinal, horizon)
+                    self.assertFalse(set(_words(passage.text)) & set(future_only),
+                                     f"future word leaked after chapter {k}")
+
+    def test_first_appearance_traps(self):
+        """A character is invisible until the chapter they first appear in."""
+        traps = {"Sherlock Holmes": "jabez", "Pride and Prejudice": "wickham", "Frankenstein": "clerval",
+                 "Alice in Wonderland": "caterpillar"}
+        for title, library, chapters, _ in self.each_book():
+            word = traps[title]
+            first = next(i for i, c in enumerate(chapters, 1) if word in " ".join(c.paragraphs).lower())
+            self.assertGreater(first, 1)
+            before = library.horizon_after_chapter(title, first - 1)
+            after = library.horizon_after_chapter(title, first)
+            self.assertEqual(library.search(title, word, before), [])
+            self.assertTrue(library.search(title, word, after))
+
+    def test_locating_a_remembered_phrase_finds_the_right_chapter(self):
+        total = exact = later = 0
+        for title, library, chapters, _ in self.each_book():
+            for number, chapter in enumerate(chapters, 1):
+                for text in spread(chunk(chapter.paragraphs), 3):
+                    phrase = " ".join(text.split()[:14])
+                    if len(phrase.split()) < 10:
+                        continue
+                    try:
+                        _, found = library.locate(title, phrase)
+                    except LookupError:
+                        total += 1
+                        continue
+                    total += 1
+                    exact += found.chapter == number
+                    later += found.chapter > number
+        print(f"\nlocate: {exact}/{total} exact, {later} placed too late")
+        self.assertGreaterEqual(exact / total, 0.95)
+        self.assertLessEqual(later / total, 0.02)
+
+
+def answer_context_passages(library, title, query, horizon):
+    seen = []
+    answer.ask(library, title, query, horizon, lambda q, p: seen.extend(p) or "", limit=50)
+    return seen
+
+
+if __name__ == "__main__":
+    unittest.main()

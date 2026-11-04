@@ -81,35 +81,40 @@ def read_epub(path: Path) -> list[Chapter]:
 
 
 _HEADING = re.compile(
-    r"^\s*(?:(?:CHAPTER|Chapter|ADVENTURE|Adventure|BOOK|Book|PART|Part)\s+[\w.\-]+.*"
+    r"^\s*(?:(?:CHAPTER|Chapter|LETTER|Letter|ADVENTURE|Adventure|BOOK|Book|PART|Part)\s+[\w.\-]+.*"
+    r"|(?:PREFACE|Preface|INTRODUCTION|Introduction|FOREWORD|Foreword|AFTERWORD|Afterword|CONTENTS|Contents"
+    r"|NOTES|Notes|FOOTNOTES|APPENDIX|Appendix)\b.*"
     r"|[IVXLC]+\.\s*[A-Z].*)\s*$")
-
-
-def _is_contents(title: str, paragraphs: list[str]) -> bool:
-    """A table of contents lists every later title, so it must not count as story text."""
-    return title == "Beginning" and "contents" in " ".join(paragraphs)[:300].lower()
+# Paratext often discusses the whole plot, so it never counts as text the reader has read.
+_PARATEXT = re.compile(r"^\s*(?:preface|introduction|foreword|afterword|contents|notes|footnotes|appendix)\b", re.I)
+FRONT_MATTER = "Beginning"
 
 
 def read_text(path: Path) -> list[Chapter]:
-    """Plain text (e.g. Project Gutenberg): strip license boilerplate, split on headings."""
+    """Plain text (e.g. Project Gutenberg): strip license boilerplate, split on headings.
+
+    Text before the first heading (title page, contents, illustrations) and prefaces,
+    introductions and notes are dropped: they are not story text and may reveal the plot.
+    """
     raw = path.read_text(encoding="utf-8-sig", errors="replace").replace("\r\n", "\n")
     start = re.search(r"\*\*\* ?START OF.*?\*\*\*", raw)
     end = re.search(r"\*\*\* ?END OF", raw)
     raw = raw[start.end() if start else 0:end.start() if end else len(raw)]
-    chapters, title, paragraphs = [], "Beginning", []
+    sections, title, paragraphs = [], FRONT_MATTER, []
     for block in re.split(r"\n\s*\n", raw):
         text = " ".join(block.split())
         if not text:
             continue
         if len(text) < 80 and _HEADING.match(text):
-            if sum(len(p) for p in paragraphs) >= MIN_CHAPTER_CHARS and not _is_contents(title, paragraphs):
-                chapters.append(Chapter(title, paragraphs))
+            sections.append((title, paragraphs))
             title, paragraphs = text, []
         else:
             paragraphs.append(text)
-    if sum(len(p) for p in paragraphs) >= MIN_CHAPTER_CHARS:
-        chapters.append(Chapter(title, paragraphs))
-    return chapters
+    sections.append((title, paragraphs))
+    headed = any(t != FRONT_MATTER for t, _ in sections)
+    return [Chapter(t, p) for t, p in sections
+            if sum(len(x) for x in p) >= MIN_CHAPTER_CHARS and not _PARATEXT.match(t)
+            and not (headed and t == FRONT_MATTER)]
 
 
 def read_book(path: Path) -> list[Chapter]:
