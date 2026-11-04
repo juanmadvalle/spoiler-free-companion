@@ -28,6 +28,10 @@ python -m companion recap "My Book" --phrase "a line I just read"
 python -m unittest discover -s tests -t .
 ```
 
+### Search quality
+
+The index stems words ("crying" finds "cried") and re-ranks the top candidates by how many distinct query terms each passage covers. `python scripts/eval_search.py` measures this on the cached real books: queries of three remembered words, all inflected, find a passage containing them in the top 3 for 99.0% of 585 cases (0.5% without stemming), and noisy queries rise from 92.8% to 98.1% with the re-ranking. Libraries built earlier are upgraded in place on first open. Synonyms and paraphrases are not handled.
+
 ### Aliases and future questions
 
 - **Aliases:** at ingest, multi-word proper names ("Sherlock Holmes") are detected with the position of their first appearance. A search for "Sherlock" also looks for "Holmes" only when, at your position, that name is the single unambiguous match for both words. A name first seen later (say a second "Mark Reed") can never influence an earlier answer, and an ambiguous surname such as "Bennet" is left alone. Nicknames ("Lizzy") are not detected.
@@ -48,7 +52,7 @@ Books are processed locally from files you provide; nothing is uploaded except t
 ## Limits
 
 - Reading position is per chapter or per remembered phrase, not page numbers (they vary by edition).
-- Retrieval is keyword-based (SQLite FTS5), so questions that share no words with the text may miss. Embeddings are the natural next step; keep the same SQL horizon filter.
+- Retrieval is keyword-based (SQLite FTS5 with stemming), so questions that share no words with the text, such as pure paraphrases or synonyms, may still miss. Embeddings are the natural next step; keep the same SQL horizon filter.
 - Chapter titles are visible in `chapters`; so are headings in the text itself.
 - Books only. Video would need subtitle files (`.srt`) with timestamps as positions.
 - Questions that ask about the future ("how does it end?") get "not established up to this point" by design.

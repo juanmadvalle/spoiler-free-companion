@@ -16,8 +16,10 @@ CREATE TABLE IF NOT EXISTS chunks (
     id INTEGER PRIMARY KEY, work_id INTEGER NOT NULL REFERENCES works(id),
     ordinal INTEGER NOT NULL, chapter INTEGER NOT NULL, chapter_title TEXT NOT NULL,
     text TEXT NOT NULL, UNIQUE (work_id, ordinal));
-CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(text, content='chunks', content_rowid='id');
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+    text, content='chunks', content_rowid='id', tokenize='porter unicode61 remove_diacritics 2');
 """
+CANDIDATE_FACTOR = 5
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,16 @@ class Library:
     def __init__(self, path: Path | str):
         self.db = sqlite3.connect(path)
         self.db.executescript(SCHEMA)
+        self._upgrade_fts()
+
+    def _upgrade_fts(self) -> None:
+        """Libraries built before stemming get their index rebuilt in place."""
+        sql = self.db.execute("SELECT sql FROM sqlite_master WHERE name = 'chunks_fts'").fetchone()[0]
+        if "porter" not in sql:
+            with self.db:
+                self.db.execute("DROP TABLE chunks_fts")
+                self.db.executescript(SCHEMA)
+                self.db.execute("INSERT INTO chunks_fts (chunks_fts) VALUES ('rebuild')")
 
     def close(self) -> None:
         self.db.close()
@@ -124,7 +136,11 @@ class Library:
             "SELECT c.ordinal, c.chapter, c.chapter_title, c.text FROM chunks_fts f "
             "JOIN chunks c ON c.id = f.rowid "
             "WHERE chunks_fts MATCH ? AND c.work_id = ? AND c.ordinal <= ? "
-            "ORDER BY bm25(chunks_fts) LIMIT ?", (_fts_query(words), work_id, horizon, limit)).fetchall()
+            "ORDER BY bm25(chunks_fts) LIMIT ?",
+            (_fts_query(words), work_id, horizon, limit * CANDIDATE_FACTOR)).fetchall()
+        # Passages covering more distinct query terms first; ties keep bm25 order (sort is stable).
+        terms = _terms(words)
+        rows = sorted(rows, key=lambda r: -_coverage(r[3], terms))[:limit]
         return sorted((Passage(*r) for r in rows), key=lambda p: p.ordinal)
 
     def aliases(self, title: str, words: list[str], horizon: int) -> list[str]:
@@ -159,7 +175,16 @@ def _words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9']+", text.lower().replace("’", "'"))
 
 
+def _terms(words: list[str]) -> list[str]:
+    return list(dict.fromkeys([w for w in words if w not in _STOP] or words))
+
+
+def _coverage(text: str, terms: list[str]) -> int:
+    """How many distinct query terms the passage contains (shared 5-letter prefix counts as a match)."""
+    passage = set(_words(text))
+    return sum(t in passage or (len(t) >= 5 and any(w.startswith(t[:5]) for w in passage)) for t in terms)
+
+
 def _fts_query(words: list[str]) -> str:
     """OR of quoted terms so punctuation or operators in user text can't break the query."""
-    terms = [w for w in words if w not in _STOP] or words
-    return " OR ".join('"' + w.replace('"', "") + '"' for w in dict.fromkeys(terms))
+    return " OR ".join('"' + w.replace('"', "") + '"' for w in _terms(words))
