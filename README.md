@@ -37,3 +37,7 @@ Books are processed locally from files you provide; nothing is uploaded except t
 - Chapter titles are visible in `chapters`; so are headings in the text itself.
 - Books only. Video would need subtitle files (`.srt`) with timestamps as positions.
 - Questions that ask about the future ("how does it end?") get "not established up to this point" by design.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
