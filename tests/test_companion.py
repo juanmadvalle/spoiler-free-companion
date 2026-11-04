@@ -150,3 +150,22 @@ class CliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChunkTests(unittest.TestCase):
+    def test_long_paragraphs_split_at_sentence_ends_within_the_limit(self):
+        from companion.ingest import chunk
+
+        sentences = [f"Sentence number {i} ends here." for i in range(40)]
+        pieces = chunk([" ".join(sentences)], limit=120)
+        self.assertGreater(len(pieces), 5)
+        self.assertTrue(all(len(p) <= 120 for p in pieces))
+        self.assertTrue(all(p.endswith(".") for p in pieces))
+        self.assertEqual(" ".join(pieces), " ".join(sentences))
+
+    def test_short_paragraphs_merge_and_an_oversize_sentence_stays_whole(self):
+        from companion.ingest import chunk
+
+        self.assertEqual(chunk(["One.", "Two."], limit=50), ["One. Two."])
+        giant = "word " * 50
+        self.assertEqual(chunk([giant.strip()], limit=40), [giant.strip()])

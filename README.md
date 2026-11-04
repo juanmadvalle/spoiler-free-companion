@@ -51,6 +51,8 @@ Measured on the cached real books (`scripts/eval_semantic.py`, 31 hand-written p
 
 **Other embedding models.** Set `COMPANION_EMBED_MODEL` and run `embed` again (vectors are stored per model, so several can coexist). `python scripts/compare_models.py` compared three on the Alice and Frankenstein questions (17, hit in the top 5): `BAAI/bge-small-en-v1.5` (default, 67 MB, about 5 passages/s) 9, `BAAI/bge-base-en-v1.5` (210 MB, about 2/s) 11, `snowflake/snowflake-arctic-embed-m` (430 MB, about 1.6/s) 10. A gain of two questions out of 17 is within noise for this small set, so the default stays small; try `bge-base` if indexing time and disk do not matter to you.
 
+**Passage size.** Passages are at most 700 characters, cut at sentence ends and never across a chapter. `python scripts/compare_chunking.py` tried other limits on the Alice and Frankenstein questions (17; keyword / hybrid hits in the top 5): 250 chars 7 / 7, 350 chars 5 / 8, 500 chars 4 / 9, 700 chars 9 / 11, 1000 chars 9 / 11, 1400 chars 8 / 12. Shorter passages were clearly worse and longer ones no better, so 700 stays (changing the limit means re-ingesting books). Cutting oversize paragraphs at sentence ends also made `--phrase` locating exact on all 336 sampled phrases.
+
 ### Aliases and future questions
 
 - **Aliases:** at ingest, multi-word proper names ("Sherlock Holmes") are detected with the position of their first appearance. A search for "Sherlock" also looks for "Holmes" only when, at your position, that name is the single unambiguous match for both words. A name first seen later (say a second "Mark Reed") can never influence an earlier answer, and an ambiguous surname such as "Bennet" is left alone. Nicknames ("Lizzy") are not detected.

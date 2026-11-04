@@ -126,14 +126,35 @@ def read_book(path: Path) -> list[Chapter]:
     raise ValueError(f"Unsupported format: {suffix} (use .epub or .txt)")
 
 
-def chunk(paragraphs: list[str]) -> list[str]:
-    """Merge short consecutive paragraphs; never split one across a chapter."""
+_SENTENCE = re.compile(r"""(?<=[.!?])["”’']?\s+""")
+
+
+def _pieces(paragraph: str, limit: int) -> list[str]:
+    """A paragraph longer than the limit is cut at sentence ends (never mid-sentence unless one is huge)."""
+    if len(paragraph) <= limit:
+        return [paragraph]
+    pieces, current = [], ""
+    for sentence in _SENTENCE.split(paragraph):
+        if current and len(current) + len(sentence) + 1 > limit:
+            pieces.append(current)
+            current = ""
+        current = f"{current} {sentence}".strip()
+    return pieces + [current] if current else pieces
+
+
+def chunk(paragraphs: list[str], limit: int | None = None) -> list[str]:
+    """Pack paragraphs (split at sentence ends when too long) into passages of at most `limit` characters.
+
+    Passages never cross a chapter, so reading position stays exact.
+    """
+    limit = limit or MAX_CHUNK_CHARS
     chunks, current = [], ""
     for paragraph in paragraphs:
-        if current and len(current) + len(paragraph) + 1 > MAX_CHUNK_CHARS:
-            chunks.append(current)
-            current = ""
-        current = f"{current} {paragraph}".strip()
+        for piece in _pieces(paragraph, limit):
+            if current and len(current) + len(piece) + 1 > limit:
+                chunks.append(current)
+                current = ""
+            current = f"{current} {piece}".strip()
     if current:
         chunks.append(current)
     return chunks
