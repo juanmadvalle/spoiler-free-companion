@@ -24,6 +24,7 @@ def main(argv=None) -> int:
     add.add_argument("file", type=Path)
     add.add_argument("--title", help="Defaults to the file name")
     add.add_argument("--embed", action="store_true", help="Also build semantic vectors (needs: pip install fastembed)")
+    add.add_argument("--lang", choices=("auto", "en", "es"), default="auto", help="Book language (default: detect)")
     embed = sub.add_parser("embed", help="Build semantic vectors for a book already ingested")
     embed.add_argument("title")
     parser.add_argument("--no-embeddings", action="store_true", help="Keyword search only, even if vectors exist")
@@ -71,7 +72,8 @@ def main(argv=None) -> int:
             chapters = read_book(args.file)
             if not chapters:
                 raise ValueError("No readable chapters found")
-            print(f"Ingested '{title}': {len(chapters)} chapters, {library.add_work(title, chapters)} passages.")
+            passages = library.add_work(title, chapters, None if args.lang == "auto" else args.lang)
+            print(f"Ingested '{title}' ({library.lang_of(title)}): {len(chapters)} chapters, {passages} passages.")
             if args.embed:
                 _embed(library, title)
         elif args.command == "embed":
@@ -114,7 +116,8 @@ def _embed(library: Library, title: str) -> None:
         raise RuntimeError("Semantic search needs: pip install fastembed")
     count = library.embed_work(
         title, progress=lambda done, total: print(f"\r  embedding {done}/{total}", end="", file=sys.stderr))
-    print(f"\nEmbedded {count} passages with {library.embedder.name}.")
+    model = library._embedder_for(library._work(title)).name
+    print(f"\nEmbedded {count} passages with {model}.")
 
 
 def _key(args) -> int:

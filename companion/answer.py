@@ -4,7 +4,7 @@ import os
 from typing import Protocol
 
 from . import keystore
-from .guard import REFUSAL, is_future_question
+from .guard import REFUSAL, is_future_question, nothing_found, refusal
 from .store import Library, Passage
 
 SYSTEM = (
@@ -27,7 +27,7 @@ def build_context(passages: list[Passage]) -> str:
 def extractive(question: str, passages: list[Passage]) -> str:
     """No-LLM fallback: show the relevant passages themselves."""
     if not passages:
-        return "Nothing relevant has been established up to this point."
+        return nothing_found(question)
     return "\n\n".join(f"[{p.ordinal}] chapter {p.chapter}: {p.text}" for p in passages)
 
 
@@ -65,7 +65,7 @@ def check_horizon(passages: list[Passage], horizon: int) -> None:
 def ask(library: Library, title: str, question: str, horizon: int, answerer: Answerer | None = None,
         limit: int = 6) -> tuple[str, list[Passage]]:
     if is_future_question(question):  # no search and no model call
-        return REFUSAL, []
+        return refusal(question), []
     passages = library.search(title, question, horizon, limit)
     check_horizon(passages, horizon)
     return (answerer or default_answerer())(question, passages), passages

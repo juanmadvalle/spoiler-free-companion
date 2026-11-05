@@ -81,12 +81,29 @@ def read_epub(path: Path) -> list[Chapter]:
 
 
 _HEADING = re.compile(
-    r"^\s*(?:(?:CHAPTER|Chapter|LETTER|Letter|ADVENTURE|Adventure|BOOK|Book|PART|Part)\s+[\w.\-]+.*"
+    r"^\s*(?:(?:CHAPTER|Chapter|ADVENTURE|Adventure|BOOK|Book|PART|Part"
+    r"|CAP[IÍ]TULO|Cap[ií]tulo|CAPITULO|Capitulo|TRATADO|Tratado|LIBRO|Libro|PARTE|Parte"
+    r"|AVENTURA|Aventura|ACTO|Acto|JORNADA|Jornada)\s+[\w.\-]+.*"
+    # "Letter 1" / "Carta 2" are chapters; "Carta de don Quijote a Dulcinea" is a letter inside one.
+    r"|(?:LETTER|Letter|CARTA|Carta)\s+(?:[IVXLC]+\b|\d+\b|[Pp]rimera\b|[Ss]egunda\b|[Tt]ercera\b).*"
     r"|(?:PREFACE|Preface|INTRODUCTION|Introduction|FOREWORD|Foreword|AFTERWORD|Afterword|CONTENTS|Contents"
-    r"|NOTES|Notes|FOOTNOTES|APPENDIX|Appendix)\b.*"
-    r"|[IVXLC]+\.\s*[A-Z].*)\s*$")
+    r"|NOTES|Notes|FOOTNOTES|APPENDIX|Appendix"
+    r"|PR[OÓ]LOGO|Pr[oó]logo|PREFACIO|Prefacio|INTRODUCCI[OÓ]N|Introducci[oó]n|[IÍ]NDICE|[IÍ]ndice"
+    r"|NOTAS|Notas|AP[EÉ]NDICE|Ap[eé]ndice|DEDICATORIA|Dedicatoria|AGRADECIMIENTOS|Agradecimientos"
+    r"|EP[IÍ]LOGO|Ep[ií]logo)\b.*"
+    r"|(?:PRIMERA|Primera|SEGUNDA|Segunda|TERCERA|Tercera|CUARTA|Cuarta)\s+(?:PARTE|parte)\b.*"
+    r"|[IVXLC]+\.\s*[A-ZÁÉÍÓÚÑ].*)\s*$")
+# A numbered chapter line may carry its whole title ("Capítulo IV. De lo que le sucedió ..."), so it may be long.
+_NUMBERED = re.compile(
+    r"^\s*(?:chapter|cap[ií]tulo|tratado|parte|libro|carta|book|part|letter)\s+"
+    r"(?:[ivxlcdm]+|\d+|primer[oa]|segund[oa]|tercer[oa]|cuart[oa]|quint[oa]|sext[oa]|s[eé]ptim[oa]|octav[oa]"
+    r"|noven[oa]|d[eé]cim[oa]|[uú]ltim[oa])\b", re.I)
 # Paratext often discusses the whole plot, so it never counts as text the reader has read.
-_PARATEXT = re.compile(r"^\s*(?:preface|introduction|foreword|afterword|contents|notes|footnotes|appendix)\b", re.I)
+# (An unnumbered prologue is treated the same way: editions often use it for an editor's introduction.)
+_PARATEXT = re.compile(r"^\s*(?:preface|introduction|foreword|afterword|contents|notes|footnotes|appendix"
+                       r"|pr[oó]logo|prefacio|introducci[oó]n|[ií]ndice|notas|ap[eé]ndice|dedicatoria|agradecimientos"
+                       r"|(?:primera|segunda|tercera|cuarta)\s+parte)\b",  # a part's title page and dedications
+                       re.I)
 FRONT_MATTER = "Beginning"
 
 
@@ -96,7 +113,12 @@ def read_text(path: Path) -> list[Chapter]:
     Text before the first heading (title page, contents, illustrations) and prefaces,
     introductions and notes are dropped: they are not story text and may reveal the plot.
     """
-    raw = path.read_text(encoding="utf-8-sig", errors="replace").replace("\r\n", "\n")
+    data = path.read_bytes()
+    try:
+        raw = data.decode("utf-8-sig")
+    except UnicodeDecodeError:  # older Spanish and French texts are often Latin-1/Windows-1252
+        raw = data.decode("cp1252", errors="replace")
+    raw = raw.replace("\r\n", "\n")
     start = re.search(r"\*\*\* ?START OF.*?\*\*\*", raw)
     end = re.search(r"\*\*\* ?END OF", raw)
     raw = raw[start.end() if start else 0:end.start() if end else len(raw)]
@@ -105,7 +127,7 @@ def read_text(path: Path) -> list[Chapter]:
         text = " ".join(block.split())
         if not text:
             continue
-        if len(text) < 80 and _HEADING.match(text):
+        if len(text) < (250 if _NUMBERED.match(text) else 80) and _HEADING.match(text):
             sections.append((title, paragraphs))
             title, paragraphs = text, []
         else:

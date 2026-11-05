@@ -6,6 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import lang as langs
 from .ingest import Chapter, chunk
 from .names import expand_words, extract_names
 
@@ -14,13 +15,15 @@ CREATE TABLE IF NOT EXISTS names (work_id INTEGER NOT NULL, name TEXT NOT NULL, 
 CREATE TABLE IF NOT EXISTS vectors (
     work_id INTEGER NOT NULL, ordinal INTEGER NOT NULL, model TEXT NOT NULL, vec BLOB NOT NULL,
     PRIMARY KEY (work_id, ordinal, model));
-CREATE TABLE IF NOT EXISTS works (id INTEGER PRIMARY KEY, title TEXT UNIQUE NOT NULL);
+CREATE TABLE IF NOT EXISTS works (id INTEGER PRIMARY KEY, title TEXT UNIQUE NOT NULL, lang TEXT NOT NULL DEFAULT 'en');
 CREATE TABLE IF NOT EXISTS chunks (
     id INTEGER PRIMARY KEY, work_id INTEGER NOT NULL REFERENCES works(id),
     ordinal INTEGER NOT NULL, chapter INTEGER NOT NULL, chapter_title TEXT NOT NULL,
     text TEXT NOT NULL, UNIQUE (work_id, ordinal));
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     text, content='chunks', content_rowid='id', tokenize='porter unicode61 remove_diacritics 2');
+-- Languages other than English are indexed as pre-stemmed text (see lang.py), one row per passage.
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts_x USING fts5(stems, tokenize='unicode61 remove_diacritics 2');
 """
 CANDIDATE_FACTOR = 5
 RERANK_POOL = 40  # how many hybrid candidates the cross-encoder re-orders
@@ -42,6 +45,9 @@ class Library:
         self.reranker = reranker  # optional cross-encoder that re-orders the hybrid candidates
         self.db = sqlite3.connect(path)
         self.db.executescript(SCHEMA)
+        if "lang" not in [row[1] for row in self.db.execute("PRAGMA table_info(works)")]:
+            with self.db:  # libraries made before language support are all English
+                self.db.execute("ALTER TABLE works ADD COLUMN lang TEXT NOT NULL DEFAULT 'en'")
         self._upgrade_fts()
 
     def _upgrade_fts(self) -> None:
@@ -56,30 +62,45 @@ class Library:
     def close(self) -> None:
         self.db.close()
 
-    def add_work(self, title: str, chapters: list[Chapter]) -> int:
-        """Replace any previous copy of the work; ordinals follow reading order."""
+    def add_work(self, title: str, chapters: list[Chapter], language: str | None = None) -> int:
+        """Replace any previous copy of the work; ordinals follow reading order.
+
+        The language ('en' or 'es') is detected from the text unless given.
+        """
+        pieces = [(number, chapter.title, text) for number, chapter in enumerate(chapters, start=1)
+                  for text in chunk(chapter.paragraphs)]
+        language = language if language in langs.SUPPORTED else langs.detect(text for _, _, text in pieces)
         with self.db:
             self._delete_work(title)
-            work_id = self.db.execute("INSERT INTO works (title) VALUES (?)", (title,)).lastrowid
-            ordinal, texts = 0, []
-            for number, chapter in enumerate(chapters, start=1):
-                for text in chunk(chapter.paragraphs):
-                    ordinal += 1
-                    texts.append((ordinal, text))
-                    row = self.db.execute(
-                        "INSERT INTO chunks (work_id, ordinal, chapter, chapter_title, text) VALUES (?,?,?,?,?)",
-                        (work_id, ordinal, number, chapter.title, text)).lastrowid
+            work_id = self.db.execute("INSERT INTO works (title, lang) VALUES (?, ?)", (title, language)).lastrowid
+            texts = []
+            for ordinal, (number, chapter_title, text) in enumerate(pieces, start=1):
+                texts.append((ordinal, text))
+                row = self.db.execute(
+                    "INSERT INTO chunks (work_id, ordinal, chapter, chapter_title, text) VALUES (?,?,?,?,?)",
+                    (work_id, ordinal, number, chapter_title, text)).lastrowid
+                if language == "en":
                     self.db.execute("INSERT INTO chunks_fts (rowid, text) VALUES (?, ?)", (row, text))
+                else:
+                    self.db.execute("INSERT INTO chunks_fts_x (rowid, stems) VALUES (?, ?)",
+                                    (row, " ".join(langs.stems(text, language))))
             self.db.executemany("INSERT INTO names (work_id, name, first_seen) VALUES (?,?,?)",
                                 [(work_id, " ".join(n), seen) for n, seen in extract_names(texts).items()])
-        return ordinal
+        return len(pieces)
+
+    def lang_of(self, title: str) -> str:
+        return self.db.execute("SELECT lang FROM works WHERE id = ?", (self._work(title),)).fetchone()[0]
 
     def _delete_work(self, title: str) -> None:
-        row = self.db.execute("SELECT id FROM works WHERE title = ?", (title,)).fetchone()
+        row = self.db.execute("SELECT id, lang FROM works WHERE title = ?", (title,)).fetchone()
         if row:
+            row, language = (row[0],), row[1]
             for chunk_id, text in self.db.execute("SELECT id, text FROM chunks WHERE work_id = ?", row).fetchall():
-                self.db.execute("INSERT INTO chunks_fts (chunks_fts, rowid, text) VALUES ('delete', ?, ?)",
-                                (chunk_id, text))
+                if language == "en":
+                    self.db.execute("INSERT INTO chunks_fts (chunks_fts, rowid, text) VALUES ('delete', ?, ?)",
+                                    (chunk_id, text))
+                else:
+                    self.db.execute("DELETE FROM chunks_fts_x WHERE rowid = ?", (chunk_id,))
             self.db.execute("DELETE FROM chunks WHERE work_id = ?", row)
             self.db.execute("DELETE FROM names WHERE work_id = ?", row)
             self.db.execute("DELETE FROM vectors WHERE work_id = ?", row)
@@ -123,10 +144,12 @@ class Library:
         words = _words(phrase)
         if not words:
             raise ValueError("Phrase has no searchable words")
+        work_id = self._work(title)
+        table, match = self._fts(self.lang_of(title), words)
         rows = self.db.execute(
-            "SELECT c.ordinal, c.chapter, c.chapter_title, c.text FROM chunks_fts f "
-            "JOIN chunks c ON c.id = f.rowid WHERE chunks_fts MATCH ? AND c.work_id = ? "
-            "ORDER BY bm25(chunks_fts) LIMIT 10", (_fts_query(words), self._work(title))).fetchall()
+            "SELECT c.ordinal, c.chapter, c.chapter_title, c.text FROM " + table + " f "
+            "JOIN chunks c ON c.id = f.rowid WHERE " + table + " MATCH ? AND c.work_id = ? "
+            "ORDER BY bm25(" + table + ") LIMIT 10", (match, work_id)).fetchall()
         needle = " ".join(words)
         best, score = None, 0.0
         for row in rows:
@@ -146,38 +169,58 @@ class Library:
         if not words:
             return []
         work_id = self._work(title)
+        language = self.lang_of(title)
         semantic = self._semantic(work_id, query, horizon, limit * CANDIDATE_FACTOR)
         words += self.aliases(title, words, horizon)
+        table, match = self._fts(language, words)
         rows = self.db.execute(
-            "SELECT c.ordinal, c.chapter, c.chapter_title, c.text FROM chunks_fts f "
+            "SELECT c.ordinal, c.chapter, c.chapter_title, c.text FROM " + table + " f "
             "JOIN chunks c ON c.id = f.rowid "
-            "WHERE chunks_fts MATCH ? AND c.work_id = ? AND c.ordinal <= ? "
-            "ORDER BY bm25(chunks_fts) LIMIT ?",
-            (_fts_query(words), work_id, horizon, limit * CANDIDATE_FACTOR)).fetchall()
+            "WHERE " + table + " MATCH ? AND c.work_id = ? AND c.ordinal <= ? "
+            "ORDER BY bm25(" + table + ") LIMIT ?",
+            (match, work_id, horizon, limit * CANDIDATE_FACTOR)).fetchall()
         # Passages covering more distinct query terms first; ties keep bm25 order (sort is stable).
-        terms = _terms(words)
-        rows = sorted(rows, key=lambda r: -_coverage(r[3], terms))
+        cover, count = _coverage_for(language, words)
+        rows = sorted(rows, key=lambda r: -cover(r[3]))
         if semantic:
-            pinned, rest = _fuse(rows, semantic, terms)
-            if self.reranker and rest:  # candidates are already horizon-filtered; only their order changes
+            pinned, rest = _fuse(rows, semantic, cover, count)
+            if self.reranker and rest and language == "en":  # candidates are horizon-filtered; only order changes
                 pool = rest[:RERANK_POOL]
                 scores = self.reranker.rerank(query, [r[3] for r in pool])
                 rest = [r for _, r in sorted(zip(scores, pool), key=lambda pair: -pair[0])] + rest[RERANK_POOL:]
             rows = pinned + rest
         return sorted((Passage(*r) for r in rows[:limit]), key=lambda p: p.ordinal)
 
+    @staticmethod
+    def _fts(language: str, words: list[str]) -> tuple[str, str]:
+        """(FTS table, MATCH expression) for a language; English relies on SQLite's porter stemmer."""
+        if language == "en":
+            return "chunks_fts", _fts_query(words)
+        terms = langs.query_terms(words, language)
+        return "chunks_fts_x", " OR ".join('"' + t.replace('"', "") + '"' for t in terms) or '""'
+
+    def _embedder_for(self, work_id: int):
+        """The embedder for a work's language (a LanguageEmbedders object picks one; a plain embedder serves all)."""
+        if self.embedder is None:
+            return None
+        language = self.db.execute("SELECT lang FROM works WHERE id = ?", (work_id,)).fetchone()[0]
+        pick = getattr(self.embedder, "for_lang", None)
+        return pick(language) if pick else self.embedder
+
     def embed_work(self, title: str, batch: int = 64, progress=None) -> int:
         """Embed every passage of a work that has no vector yet for the current model."""
         if self.embedder is None:
             raise RuntimeError("No embedder available (pip install fastembed)")
-        work_id, model = self._work(title), self.embedder.name
+        work_id = self._work(title)
+        embedder = self._embedder_for(work_id)
+        model = embedder.name
         todo = self.db.execute(
             "SELECT c.ordinal, c.text FROM chunks c WHERE c.work_id = ? AND NOT EXISTS (SELECT 1 FROM vectors v "
             "WHERE v.work_id = c.work_id AND v.ordinal = c.ordinal AND v.model = ?) ORDER BY c.ordinal",
             (work_id, model)).fetchall()
         for start in range(0, len(todo), batch):
             part = todo[start:start + batch]
-            vectors = self.embedder.embed([text for _, text in part])
+            vectors = embedder.embed([text for _, text in part])
             with self.db:
                 self.db.executemany("INSERT OR REPLACE INTO vectors (work_id, ordinal, model, vec) VALUES (?,?,?,?)",
                                     [(work_id, o, model, v.tobytes()) for (o, _), v in zip(part, vectors)])
@@ -188,24 +231,26 @@ class Library:
     def has_vectors(self, title: str) -> bool:
         if self.embedder is None:
             return False
+        work_id = self._work(title)
         return self.db.execute("SELECT 1 FROM vectors WHERE work_id = ? AND model = ? LIMIT 1",
-                               (self._work(title), self.embedder.name)).fetchone() is not None
+                               (work_id, self._embedder_for(work_id).name)).fetchone() is not None
 
     def _semantic(self, work_id: int, query: str, horizon: int, limit: int) -> list[tuple]:
         """Nearest passages by meaning. Only vectors of passages at or before the horizon are ever loaded."""
-        if self.embedder is None:
+        embedder = self._embedder_for(work_id)
+        if embedder is None:
             return []
         rows = self.db.execute(
             "SELECT c.ordinal, c.chapter, c.chapter_title, c.text, v.vec FROM vectors v "
             "JOIN chunks c ON c.work_id = v.work_id AND c.ordinal = v.ordinal "
             "WHERE v.work_id = ? AND v.model = ? AND c.ordinal <= ?",
-            (work_id, self.embedder.name, horizon)).fetchall()
+            (work_id, embedder.name, horizon)).fetchall()
         if not rows:
             return []
         import numpy as np
 
         matrix = np.frombuffer(b"".join(r[4] for r in rows), dtype=np.float32).reshape(len(rows), -1)
-        embed_query = getattr(self.embedder, "embed_query", self.embedder.embed)
+        embed_query = getattr(embedder, "embed_query", embedder.embed)
         scores = matrix @ embed_query([query])[0]
         best = np.argsort(-scores)[:limit]
         return [rows[i][:4] for i in best]
@@ -238,19 +283,27 @@ _STOP = frozenset("a an and are as at be but by for from had has have he her his
                   "me my about did does do how tell".split())
 
 
-def _words(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9']+", text.lower().replace("’", "'"))
+_words = langs.words
 
 
-def _fuse(keyword: list[tuple], semantic: list[tuple], terms: list[str], k: int = 60) -> tuple[list, list]:
+def _coverage_for(language: str, words: list[str]):
+    """(function giving how many distinct query terms a text contains, number of query terms)."""
+    if language == "en":
+        terms = _terms(words)
+        return (lambda text: _coverage(text, terms)), len(terms)
+    terms = set(langs.query_terms(words, language))
+    return (lambda text: len(terms & set(langs.stems(text, language)))), len(terms)
+
+
+def _fuse(keyword: list[tuple], semantic: list[tuple], cover, count: int, k: int = 60) -> tuple[list, list]:
     """Merge keyword and semantic rankings (rows are keyed by ordinal); returns (pinned, rest).
 
     Passages that contain nearly all the query words are exact lookups and stay first; the rest are
     ordered by weighted reciprocal rank fusion, so paraphrased questions are carried by the semantic side.
     """
-    needed = max(2, len(terms) - len(terms) // 5)
-    pinned = [row for row in keyword if _coverage(row[3], terms) >= min(needed, len(terms))]
-    fused_keyword = [row for row in keyword if _coverage(row[3], terms) >= min(MIN_KEYWORD_COVERAGE, len(terms))]
+    needed = max(2, count - count // 5)
+    pinned = [row for row in keyword if cover(row[3]) >= min(needed, count)]
+    fused_keyword = [row for row in keyword if cover(row[3]) >= min(MIN_KEYWORD_COVERAGE, count)]
     score, by_ordinal = {}, {}
     for ranking, weight in ((fused_keyword, KEYWORD_WEIGHT), (semantic, 1.0)):
         for rank, row in enumerate(ranking):

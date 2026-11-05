@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Protocol
 
 DEFAULT_MODEL = os.environ.get("COMPANION_EMBED_MODEL", "BAAI/bge-small-en-v1.5")
+MULTILINGUAL_MODEL = os.environ.get("COMPANION_EMBED_MODEL_MULTILINGUAL",
+                                    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 RERANK_MODEL = os.environ.get("COMPANION_RERANK_MODEL", "Xenova/ms-marco-MiniLM-L-6-v2")
 BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 CACHE_DIR = Path(os.environ.get("COMPANION_MODEL_DIR", Path.home() / ".cache" / "spoiler-free-companion" / "models"))
@@ -64,14 +66,25 @@ class FastReranker:
         return [float(score) for score in self._model.rerank(query, texts)]
 
 
-def default_embedder() -> Embedder | None:
-    """A FastEmbedder when fastembed and numpy are installed, else None (keyword search only)."""
+class LanguageEmbedders:
+    """Picks the embedding model for a book's language: English-only BGE, or a multilingual model otherwise."""
+
+    def __init__(self):
+        self._models: dict[str, FastEmbedder] = {}
+
+    def for_lang(self, language: str) -> FastEmbedder:
+        name = DEFAULT_MODEL if language == "en" else MULTILINGUAL_MODEL
+        return self._models.setdefault(name, FastEmbedder(name))
+
+
+def default_embedder() -> LanguageEmbedders | None:
+    """Language-aware embedders when fastembed and numpy are installed, else None (keyword search only)."""
     try:
         import fastembed  # noqa: F401
         import numpy  # noqa: F401
     except ImportError:
         return None
-    return FastEmbedder()
+    return LanguageEmbedders()
 
 
 def default_reranker() -> Reranker | None:

@@ -23,6 +23,23 @@ _FUTURE = [re.compile(p, re.I) for p in (
 
 REFUSAL = ("That depends on what comes after your current position, so it is not established up to this "
            "point (and answering would be a spoiler). Ask about what you have already read.")
+REFUSAL_ES = ("Eso depende de lo que viene después de tu posición actual, así que no está establecido hasta este "
+              "punto (y responder sería un spoiler). Pregunta por lo que ya has leído.")
+NOTHING = "Nothing relevant has been established up to this point."
+NOTHING_ES = "Nada relevante se ha establecido hasta este punto."
+
+
+def refusal(question: str) -> str:
+    """The refusal text in the language of the question."""
+    from .lang import detect
+
+    return REFUSAL_ES if detect([question]) == "es" else REFUSAL
+
+
+def nothing_found(question: str) -> str:
+    from .lang import detect
+
+    return NOTHING_ES if detect([question]) == "es" else NOTHING
 
 
 def is_future_question(question: str) -> bool:

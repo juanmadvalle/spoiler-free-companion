@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 from . import keystore, llm
 from .agent import Session, run_agent
 from .answer import ask, default_answerer, extractive, recap
+from .guard import REFUSAL, REFUSAL_ES
 from .embed import default_embedder
 from .ingest import read_book
 from .store import Library
@@ -44,8 +45,8 @@ class App:
     def state(self) -> dict:
         library = self.library()
         try:
-            books = [{"title": t, "chapters": len(library.chapters(t)), "semantic": library.has_vectors(t)}
-                     for t in library.works()]
+            books = [{"title": t, "chapters": len(library.chapters(t)), "semantic": library.has_vectors(t),
+                      "lang": library.lang_of(t)} for t in library.works()]
         finally:
             library.close()
         config = llm.settings()
@@ -96,17 +97,18 @@ class App:
             elif body.get("agent"):
                 session = Session(library, title, horizon)
                 text, passages = run_agent(session, str(body["question"])), []
-                return {"answer": text, "passages": [], "tools": session.log, "mode": "agent", "ordinal": horizon}
+                return {"answer": text, "passages": [], "tools": session.log, "mode": "agent", "ordinal": horizon,
+                        "refused": text in (REFUSAL, REFUSAL_ES)}
             else:
                 text, passages = ask(library, title, str(body["question"]), horizon, answerer)
             mode = "passages" if answerer is extractive else "llm"
-            return {"answer": text, "mode": mode, "ordinal": horizon,
+            return {"answer": text, "mode": mode, "ordinal": horizon, "refused": text in (REFUSAL, REFUSAL_ES),
                     "passages": [{"ordinal": p.ordinal, "chapter": p.chapter, "chapter_title": p.chapter_title,
                                   "text": p.text} for p in passages]}
         finally:
             library.close()
 
-    def ingest(self, filename: str, data: bytes, title: str, embed: bool) -> dict:
+    def ingest(self, filename: str, data: bytes, title: str, embed: bool, language: str = "") -> dict:
         suffix = Path(filename).suffix.lower()
         if suffix not in ALLOWED_SUFFIXES:
             raise ValueError("Only .epub and .txt files are supported")
@@ -124,10 +126,11 @@ class App:
         title = (title or Path(filename).stem).strip()[:200] or "Untitled"
         library = self.library()
         try:
-            passages = library.add_work(title, chapters)
+            passages = library.add_work(title, chapters, language or None)
+            language = library.lang_of(title)
         finally:
             library.close()
-        result = {"title": title, "chapters": len(chapters), "passages": passages}
+        result = {"title": title, "chapters": len(chapters), "passages": passages, "lang": language}
         if embed and self.embedder is not None:
             result["job"] = self._start_embedding(title)
         return result
@@ -267,7 +270,7 @@ def make_handler(app: App, port_getter):
                         return self._json(404, {"error": "Unknown job"})
                 elif method == "POST" and path == "/api/ingest":
                     result = app.ingest(query.get("filename", ""), body, query.get("title", ""),
-                                        query.get("embed") == "1")
+                                        query.get("embed") == "1", query.get("lang", ""))
                 elif method == "POST" and path == "/api/locate":
                     result = app.locate(body)
                 elif method == "POST" and path == "/api/ask":

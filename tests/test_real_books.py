@@ -18,6 +18,8 @@ BOOKS = {  # Gutenberg id -> (title, expected chapter count)
     1342: ("Pride and Prejudice", 61),
     11: ("Alice in Wonderland", 12),
     84: ("Frankenstein", 28),  # 4 letters + 24 chapters
+    320: ("Lazarillo de Tormes", 7),  # Spanish: seven "tratados"
+    2000: ("Don Quijote", 126),  # Spanish: 52 + 74 chapters
 }
 MIN_WORD = 5
 SAMPLE = 40
@@ -129,7 +131,8 @@ class RealBookTests(unittest.TestCase):
     def test_first_appearance_traps(self):
         """A character is invisible until the chapter they first appear in."""
         traps = {"Sherlock Holmes": "jabez", "Pride and Prejudice": "wickham", "Frankenstein": "clerval",
-                 "Alice in Wonderland": "caterpillar"}
+                 "Alice in Wonderland": "caterpillar",
+                 "Lazarillo de Tormes": "escudero", "Don Quijote": "sancho"}
         for title, library, chapters, _ in self.each_book():
             word = traps[title]
             first = next(i for i, c in enumerate(chapters, 1) if word in " ".join(c.paragraphs).lower())

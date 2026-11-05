@@ -90,6 +90,12 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
         <input id="file" type="file" accept=".epub,.txt" required>
         <label for="bookTitle" data-i18n="bookTitle"></label>
         <input id="bookTitle" type="text" maxlength="200">
+        <label for="bookLang" data-i18n="language"></label>
+        <select id="bookLang">
+          <option value="" data-i18n="auto"></option>
+          <option value="es">Español</option>
+          <option value="en">English</option>
+        </select>
         <label class="row"><input id="embed" type="checkbox"> <span data-i18n="embed"></span></label>
         <p id="embedHelp" class="muted"></p>
         <button class="primary" type="submit" data-i18n="add"></button>
@@ -201,6 +207,7 @@ const TEXT = {
     keyHelpAnthropic: "Se crea en console.anthropic.com (de pago).", keyHelpCustom: "Para Ollama no hace falta clave.",
     stored: "Guardada: ", none: "ninguna", saved: "Guardado.", removed: "Clave quitada.", needKey: "Pega una clave.",
     del: "Quitar", confirmDel: "¿Quitar este libro de la biblioteca?", chapters: " capítulos", semantic: "significado",
+    language: "Idioma del libro", auto: "Detectar automáticamente",
     adding: "Procesando…", added: "Añadido: ", embedding: "Calculando vectores… ", error: "Error: ", askFirst: "Escribe una pregunta.",
   },
   en: {
@@ -228,6 +235,7 @@ const TEXT = {
     keyHelpAnthropic: "Created at console.anthropic.com (paid).", keyHelpCustom: "Ollama needs no key.",
     stored: "Stored: ", none: "none", saved: "Saved.", removed: "Key removed.", needKey: "Paste a key.",
     del: "Remove", confirmDel: "Remove this book from the library?", chapters: " chapters", semantic: "meaning",
+    language: "Book language", auto: "Detect automatically",
     adding: "Processing…", added: "Added: ", embedding: "Computing vectors… ", error: "Error: ", askFirst: "Type a question.",
   },
 };
@@ -289,7 +297,7 @@ function renderBooks() {
     pick.type = "button";
     pick.textContent = book.title;
     const small = document.createElement("small");
-    small.textContent = book.chapters + t("chapters") + (book.semantic ? " · " + t("semantic") : "");
+    small.textContent = book.chapters + t("chapters") + (book.lang ? " · " + book.lang.toUpperCase() : "") + (book.semantic ? " · " + t("semantic") : "");
     pick.append(small);
     pick.addEventListener("click", () => selectBook(book.title));
     const del = document.createElement("button");
@@ -388,7 +396,7 @@ $("addForm").addEventListener("submit", async (event) => {
   if (!file) return;
   $("addStatus").textContent = t("adding");
   try {
-    const query = new URLSearchParams({ filename: file.name, title: $("bookTitle").value.trim(), embed: $("embed").checked ? "1" : "0" });
+    const query = new URLSearchParams({ filename: file.name, title: $("bookTitle").value.trim(), embed: $("embed").checked ? "1" : "0", lang: $("bookLang").value });
     const result = await api("/api/ingest?" + query, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
     $("addStatus").textContent = t("added") + result.title;
     $("addForm").reset();
@@ -453,7 +461,7 @@ function showAnswer(question, data) {
   const head = document.createElement("div");
   head.className = "row";
   const badge = document.createElement("span");
-  const refused = data.answer.startsWith("That depends on what comes after");
+  const refused = Boolean(data.refused);
   badge.className = "badge " + (refused ? "warn" : data.mode === "passages" ? "warn" : "ok");
   badge.textContent = refused ? t("refusedMode") : data.mode === "agent" ? t("agentMode") : data.mode === "llm" ? t("llmMode") : t("passagesMode");
   const q = document.createElement("strong");

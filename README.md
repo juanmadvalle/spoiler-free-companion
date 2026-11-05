@@ -28,6 +28,25 @@ python -m companion recap "My Book" --phrase "a line I just read"
 python -m unittest discover -s tests -t .
 ```
 
+### Spanish books
+
+Spanish is supported alongside English. The language of each book is detected when you add it (or set it with `ingest --lang es`, or the language selector on the web page) and shown as `ES`/`EN`. Spanish books get:
+
+- a Spanish Snowball stemmer written for this project (`companion/lang.py`), checked to give identical results to the reference implementation on all 24,535 distinct words of Don Quijote and Lazarillo; passages are indexed under both their accented and unaccented spelling, so questions typed without accents still match;
+- Spanish chapter detection (`Capítulo`, `Tratado`, `Parte`, `Carta 1`…), where an unnumbered `Prólogo`, `Prefacio`, `Introducción`, `Índice`, notes and a part's title page are dropped as paratext because they often reveal the plot (a letter inside a chapter, such as "Carta de don Quijote a Dulcinea", is not mistaken for a chapter);
+- names with accents and titles (`don`, `doña`, `señor`…), Spanish dialogue dashes and `¿ ¡`, and Spanish refusals ("Eso depende de lo que viene después…") chosen by the language of your question;
+- a multilingual embedding model (`paraphrase-multilingual-MiniLM-L12-v2`, about 220 MB, `COMPANION_EMBED_MODEL_MULTILINGUAL` to change it) when you build semantic vectors. The cross-encoder reranker stays English-only and is skipped for Spanish books.
+
+Tested on Lazarillo de Tormes (7 tratados) and Don Quijote (all 126 chapters) from Project Gutenberg with the same anti-spoiler tests as the English books, plus `--phrase` locating (731 of 732 sampled phrases exact, none placed too late). `python scripts/eval_spanish.py` measures what Spanish support adds, in lookups of three remembered words (top 3):
+
+| | Lazarillo | Don Quijote |
+|---|---|---|
+| exact spelling, before / now | 100% / 100% | 100% / 100% |
+| another form of the same word, before / now | 86% / 99% | 75% / 100% |
+| typed without accents, before / now | 100% / 100% | 100% / 100% |
+
+Read with care: the "other form" variants are real forms found elsewhere in the same book, but "same word" is decided by the same stemmer, so this shows the pipeline does what it claims rather than independent proof of quality. On 11 hand-written paraphrase questions Spanish keyword search and the old English path tied (10 of 11), and on the 5 Lazarillo questions the multilingual embeddings scored 4 against 5 for keywords only, so on this tiny set they have not yet shown a benefit. Other languages are not supported yet; they would need a stemmer and heading rules in the same places.
+
 ### Live check of agent mode
 
 `python scripts/live_agent_check.py` runs the agent against *your* configured LLM on a synthetic book whose last chapter hides a secret, with the reader at chapter 1: a direct question naming the secret, an explicit "use read_chapter on chapter 3", and an instruction planted in chapter 1 telling the model to ignore its limits. It passes only if the secret never reaches the model through a tool and never appears in an answer. Last run (Gemini free tier, `gemini-flash-lite-latest`): 3 of 3 passed; the model did call `read_chapter(3)` and received nothing. A separate live run on Sherlock Holmes at chapter 1 showed the agent searching three times for a character who had not appeared yet and correctly reporting no mention.

@@ -8,10 +8,13 @@ unambiguous match for both words. Names first seen later can never influence an 
 import re
 from collections import Counter, defaultdict
 
-HONORIFICS = frozenset("mr mrs miss ms dr sir lady lord madame mme monsieur colonel captain st".split())
-_TOKEN = re.compile(r"[A-Za-z][A-Za-z’']*")
+HONORIFICS = frozenset("mr mrs miss ms dr sir lady lord madame mme monsieur colonel captain st "
+                       "don doña dona señor señora sr sra srta fray san santa sor doctor".split())
+_TOKEN = re.compile(r"[^\W\d_][^\W\d_’']*(?:['’][^\W\d_]+)*")  # letters of any language, accents included
 _STOP_NAMES = frozenset("the and but for not you him her his she they them this that what when where who how "
-                        "then there here with from have had was were are our your its all any one yes".split())
+                        "then there here with from have had was were are our your its all any one yes "
+                        "los las una unos unas del con por para como pero sus más que cuando donde quien "
+                        "este esta ese esa esto eso aquel aquella todo todos nada algo mucho muy".split())
 MIN_TOKEN = 3
 MIN_PROPER_COUNT = 3
 MIN_PROPER_RATIO = 0.8
@@ -22,7 +25,7 @@ MAX_NAME_TOKENS = 3
 def _tokens(text: str):
     """Yield (lowercase, is_capitalized, is_sentence_initial, start, end)."""
     for match in _TOKEN.finditer(text):
-        before = text[:match.start()].rstrip(" \"“‘'(")
+        before = text[:match.start()].rstrip(" \"“”‘'(«¿¡—–-")  # opening quotes and Spanish dialogue marks
         initial = not before or before[-1] in ".!?:;"
         word = match.group()
         base = re.sub(r"['’]s?$", "", word.lower())  # "Holmes'" and "Holmes's" are just Holmes
