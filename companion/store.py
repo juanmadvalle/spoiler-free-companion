@@ -31,6 +31,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
 -- Languages other than English are indexed as pre-stemmed text (see lang.py), one row per passage.
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts_x USING fts5(stems, tokenize='unicode61 remove_diacritics 2');
 """
+SCHEMA_VERSION = 1  # bump when SCHEMA gains a column or table that old files need
 CANDIDATE_FACTOR = 5
 RERANK_POOL = 40  # how many hybrid candidates the cross-encoder re-orders
 KEYWORD_WEIGHT = 0.5  # relative weight of the keyword ranking when fused with the semantic one
@@ -50,15 +51,22 @@ class Library:
         self.embedder = embedder  # optional; semantic search is used only for works that have vectors
         self.reranker = reranker  # optional cross-encoder that re-orders the hybrid candidates
         self.db = sqlite3.connect(path)
+        if self.db.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
+            self._migrate()  # once per library file, not once per connection (the web page opens one per request)
+
+    def _migrate(self) -> None:
+        """Create missing tables and upgrade libraries made by older versions, then mark the file as current."""
         self.db.executescript(SCHEMA)
-        if "lang" not in [row[1] for row in self.db.execute("PRAGMA table_info(works)")]:
-            with self.db:  # libraries made before language support are all English
-                self.db.execute("ALTER TABLE works ADD COLUMN lang TEXT NOT NULL DEFAULT 'en'")
-        if "start_s" not in [row[1] for row in self.db.execute("PRAGMA table_info(chunks)")]:
-            with self.db:  # libraries made before subtitle support have no timestamps
-                self.db.execute("ALTER TABLE chunks ADD COLUMN start_s REAL")
-                self.db.execute("ALTER TABLE chunks ADD COLUMN end_s REAL")
+        for table, column, definition in (("works", "lang", "TEXT NOT NULL DEFAULT 'en'"),  # before language support
+                                          ("chunks", "start_s", "REAL"), ("chunks", "end_s", "REAL")):  # before subtitles
+            if column not in [row[1] for row in self.db.execute(f"PRAGMA table_info({table})")]:
+                try:
+                    with self.db:
+                        self.db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+                except sqlite3.OperationalError:  # another connection added it a moment ago
+                    pass
         self._upgrade_fts()
+        self.db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     def _upgrade_fts(self) -> None:
         """Libraries built before stemming get their index rebuilt in place."""

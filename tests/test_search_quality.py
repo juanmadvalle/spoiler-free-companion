@@ -40,12 +40,29 @@ class SearchQualityTests(unittest.TestCase):
             db.executescript("DROP TABLE chunks_fts; CREATE VIRTUAL TABLE chunks_fts USING "
                              "fts5(text, content='chunks', content_rowid='id');"
                              "INSERT INTO chunks_fts (chunks_fts) VALUES ('rebuild');")
+            db.execute("PRAGMA user_version = 0")  # files from older versions carry no schema version
+            db.commit()
             db.close()
             library = Library(path)
             try:
                 self.assertEqual([p.ordinal for p in library.search("B", "crying girl", 10**6, limit=1)], [1])
+                sql = library.db.execute("SELECT sql FROM sqlite_master WHERE name = 'chunks_fts'").fetchone()[0]
+                self.assertIn("porter", sql)  # the index really was rebuilt, not just queried through
             finally:
                 library.close()
+
+    def test_migration_runs_once_per_library_file_not_once_per_connection(self):
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "once.db"
+            with patch.object(Library, "_migrate", autospec=True, side_effect=Library._migrate) as migrate:
+                for _ in range(4):  # the web page opens a library for every request
+                    Library(path).close()
+            self.assertEqual(migrate.call_count, 1)
+            check = sqlite3.connect(path)
+            self.assertEqual(check.execute("PRAGMA user_version").fetchone()[0], 1)
+            check.close()
 
 
 if __name__ == "__main__":

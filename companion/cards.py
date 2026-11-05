@@ -15,7 +15,7 @@ from .names import CARD_MIN_MENTIONS, HONORIFICS, MIN_PROPER_RATIO, _STOP_NAMES
 MAX_EXCERPT = 320
 
 
-def _clip(text: str, limit: int = MAX_EXCERPT) -> str:
+def clip(text: str, limit: int = MAX_EXCERPT) -> str:
     """Cut at a word boundary, so no half word is ever shown."""
     if len(text) <= limit:
         return text
@@ -82,8 +82,8 @@ def _sentence_with(text: str, token: str) -> str:
     pattern = re.compile(r"\b" + re.escape(token) + r"\b", re.I)
     for sentence in _SENTENCE.split(" ".join(text.split())):
         if pattern.search(sentence):
-            return _clip(sentence)
-    return _clip(" ".join(text.split()))
+            return clip(sentence)
+    return clip(" ".join(text.split()))
 
 
 def list_characters(db: sqlite3.Connection, work_id: int, horizon: int, limit: int = 40) -> list[dict]:
@@ -133,7 +133,7 @@ def card(db: sqlite3.Connection, work_id: int, language: str, name: str, horizon
         for sentence in _SENTENCE.split(" ".join(text.split())):
             if sentence not in seen_text and any(p.search(sentence) for p in patterns):
                 seen_text.add(sentence)
-                described.append({"ordinal": ordinal, "chapter": chapter, "chapter_title": title, "text": _clip(sentence)})
+                described.append({"ordinal": ordinal, "chapter": chapter, "chapter_title": title, "text": clip(sentence)})
         if len(described) >= 3:
             break
 

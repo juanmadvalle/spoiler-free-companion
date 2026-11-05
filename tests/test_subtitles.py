@@ -246,7 +246,7 @@ class SeriesFromARealBookTests(unittest.TestCase):
                         cues.append(subtitles.Cue(clock, clock + 2.9, sentence.strip()))
                         clock += 3.0
             grouped = subtitles.passages(cues)
-            episodes.append(Chapter(f"S01E{number:02d}", [g[0] for g in grouped], [(g[1], g[2]) for g in grouped]))
+            episodes.append(Chapter.timed(f"S01E{number:02d}", grouped))
         cls.library.add_work("Sherlock series", episodes)
         cls.rows = cls.library.db.execute("SELECT ordinal, chapter, end_s, text FROM chunks").fetchall()
 

@@ -138,7 +138,7 @@ Measured on the cached real books (`scripts/eval_semantic.py`, 31 hand-written p
 
 ### Aliases and future questions
 
-- **Aliases:** at ingest, multi-word proper names ("Sherlock Holmes") are detected with the position of their first appearance. A search for "Sherlock" also looks for "Holmes" only when, at your position, that name is the single unambiguous match for both words. A name first seen later (say a second "Mark Reed") can never influence an earlier answer, and an ambiguous surname such as "Bennet" is left alone. Nicknames ("Lizzy") are not detected.
+- **Aliases:** at ingest, multi-word proper names ("Sherlock Holmes") are detected and recorded at the passage where they become established, their second appearance, so a link is never available before the passages that justify it (libraries ingested earlier keep first-appearance positions until you add the book again). A search for "Sherlock" also looks for "Holmes" only when, at your position, that name is the single unambiguous match for both words. A name first seen later (say a second "Mark Reed") can never influence an earlier answer, and an ambiguous surname such as "Bennet" is left alone. Nicknames ("Lizzy") are not detected.
 - **Future questions:** "How does it end?", "Will she die?", "¿Cómo acaba?" and similar get an immediate "not established up to this point" with no search and no model call. The patterns are deliberately narrow, so a question about the past that is misread can simply be rephrased; the horizon filter still protects everything else.
 
 ### Agent mode

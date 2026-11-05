@@ -20,9 +20,8 @@ from .agent import Session, run_agent
 from .answer import ask, default_answerer, extractive, recap
 from .guard import REFUSAL, REFUSAL_ES
 from .embed import default_embedder
-from .ingest import Chapter, read_book
-from .subtitles import episode_title, natural_key, parse_clock, parse_cues
-from .subtitles import passages as passages_of
+from .ingest import read_book, subtitle_chapter
+from .subtitles import natural_key, parse_clock
 from .store import Library
 
 PAGE = Path(__file__).parent / "static" / "index.html"
@@ -172,10 +171,7 @@ class App:
             files.sort(key=lambda f: natural_key(f[0]))
         chapters = []
         for number, (name, text) in enumerate(files, 1):
-            grouped = passages_of(parse_cues(text))
-            if not grouped:
-                raise ValueError(f"No subtitle lines found in {name}")
-            chapters.append(Chapter(episode_title(name, number), [g[0] for g in grouped], [(g[1], g[2]) for g in grouped]))
+            chapters.append(subtitle_chapter(text, name, number))
         title = str(body.get("title") or files[0][0]).strip()[:200] or "Untitled"
         language = str(body.get("lang") or "") or None
         library = self.library()

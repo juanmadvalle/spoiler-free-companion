@@ -1,8 +1,10 @@
 """Find character names and expand queries with aliases, using only what the reader has read.
 
-Each full name ("sherlock holmes") remembers the first passage it appears in. A query word is
-expanded to the other word of its name only if, at the reader's horizon, that name is the one
-unambiguous match for both words. Names first seen later can never influence an earlier answer.
+Each full name ("sherlock holmes") remembers the passage where it became established (its second appearance).
+A query word is expanded to the other word of its name only if, at the reader's horizon, that name is the one
+unambiguous match for both words. Names established later can never influence an earlier answer. Which capitalised
+words may be part of a name still uses frequency statistics over the whole book; that is a yes/no decision about a
+word and carries no story content (character cards use position-only statistics).
 """
 
 import re
@@ -36,7 +38,11 @@ def _tokens(text: str):
 
 
 def extract_names(chunks: list[tuple[int, str]]) -> dict[tuple[str, ...], int]:
-    """Map each multi-word proper name to the ordinal of its first appearance."""
+    """Map each multi-word proper name to the ordinal where it becomes established.
+
+    A name counts as known only from its MIN_NAME_COUNT-th appearance (the second), so the link between its words
+    is not available before the passages that justify it.
+    """
     capitalized, total = Counter(), Counter()
     for _, text in chunks:
         for word, is_cap, initial, _, _ in _tokens(text):
@@ -46,7 +52,7 @@ def extract_names(chunks: list[tuple[int, str]]) -> dict[tuple[str, ...], int]:
     proper = {w for w, n in capitalized.items()
               if len(w) >= MIN_TOKEN and w not in _STOP_NAMES and n >= MIN_PROPER_COUNT
               and n / total[w] >= MIN_PROPER_RATIO}
-    first, count = {}, Counter()
+    seen_at = defaultdict(list)
     for ordinal, text in chunks:
         run, last_end = [], None
         for word, is_cap, _, start, end in [*_tokens(text), ("", False, False, -1, -1)]:
@@ -59,10 +65,9 @@ def extract_names(chunks: list[tuple[int, str]]) -> dict[tuple[str, ...], int]:
                 continue
             name = tuple(w for w in run if w not in HONORIFICS)
             if 2 <= len(name) <= MAX_NAME_TOKENS:
-                count[name] += 1
-                first.setdefault(name, ordinal)
+                seen_at[name].append(ordinal)
             run, last_end = ([word], end) if word and is_cap and word in proper else ([], None)
-    return {name: ordinal for name, ordinal in first.items() if count[name] >= MIN_NAME_COUNT}
+    return {name: ordinals[MIN_NAME_COUNT - 1] for name, ordinals in seen_at.items() if len(ordinals) >= MIN_NAME_COUNT}
 
 
 def expand_words(words: list[str], names: dict[tuple[str, ...], int], horizon: int) -> list[str]:

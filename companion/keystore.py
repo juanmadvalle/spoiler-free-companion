@@ -9,6 +9,7 @@ environment variable on a shared computer.
 
 import json
 import os
+from functools import lru_cache
 from pathlib import Path
 
 SERVICE = "spoiler-free-companion"
@@ -19,9 +20,9 @@ def config_path() -> Path:
     return Path(os.environ.get("COMPANION_CONFIG") or Path.home() / ".spoiler-free-companion" / "config.json")
 
 
-def _keyring():
-    if os.environ.get("COMPANION_NO_KEYRING"):
-        return None
+@lru_cache(maxsize=1)
+def _probe():
+    """The keyring module if this machine has a usable backend. Probed once per process: it can be slow or prompt."""
     try:
         import keyring
 
@@ -29,6 +30,13 @@ def _keyring():
         return keyring
     except Exception:
         return None
+
+
+def _keyring():
+    return None if os.environ.get("COMPANION_NO_KEYRING") else _probe()
+
+
+_secret: dict = {}  # the key read from the credential store, kept until it is saved or cleared
 
 
 def load() -> dict:
@@ -40,9 +48,10 @@ def load() -> dict:
     if not isinstance(data, dict):
         return {}
     if "api_key" not in data and (ring := _keyring()):
-        secret = ring.get_password(SERVICE, "api_key")
-        if secret:
-            data["api_key"] = secret
+        if "value" not in _secret:
+            _secret["value"] = ring.get_password(SERVICE, "api_key")
+        if _secret["value"]:
+            data["api_key"] = _secret["value"]
     return data
 
 
@@ -61,20 +70,34 @@ def save(provider: str, api_key: str, base_url: str = "", model: str = "") -> st
     else:
         data["api_key"] = api_key
         where = str(config_path())
-    path = config_path()
+    _secret.clear()
+    _write_atomically(config_path(), json.dumps(data, indent=2))
+    return where
+
+
+def _write_atomically(path: Path, text: str) -> None:
+    """Write beside the target, then swap it in: a crash or full disk never leaves a half-written key file."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # owner-only where the OS supports it
-    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-        json.dump(data, stream, indent=2)
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # owner-only where the OS supports it
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
     try:
         path.chmod(0o600)
     except OSError:
         pass
-    return where
 
 
 def clear() -> bool:
     removed = False
+    _secret.clear()
     if (ring := _keyring()):
         try:
             ring.delete_password(SERVICE, "api_key")

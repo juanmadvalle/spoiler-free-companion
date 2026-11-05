@@ -149,6 +149,8 @@ def _horizon(library: Library, args) -> int:
         if args.episode is None:
             raise ValueError("--at needs --episode")
         return library.horizon_at_time(args.title, args.episode, parse_clock(args.at))
+    if args.chapter == 0:  # 'I have not started': nothing is read yet, as in the web page
+        return 0
     return library.horizon_after_chapter(args.title, args.chapter)
 
 

@@ -17,6 +17,11 @@ class Chapter:
     paragraphs: list[str]
     times: list[tuple[float, float]] | None = None  # (start, end) seconds per paragraph, for subtitles
 
+    @classmethod
+    def timed(cls, title: str, grouped: list[tuple[str, float, float]]) -> "Chapter":
+        """A chapter whose passages are (text, start, end) triples, as produced by subtitles.passages."""
+        return cls(title, [text for text, _, _ in grouped], [(start, end) for _, start, end in grouped])
+
 
 class _TextExtractor(HTMLParser):
     BLOCKS = {"p", "div", "li", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6"}
@@ -153,15 +158,21 @@ def read_text(path: Path) -> list[Chapter]:
             and not (headed and t == FRONT_MATTER)]
 
 
+def subtitle_chapter(text: str, name: str, number: int = 1, title: str | None = None) -> Chapter:
+    """Subtitle text (SRT or WebVTT) as one timed chapter: an episode, or the whole film."""
+    from . import subtitles
+
+    grouped = subtitles.passages(subtitles.parse_cues(text))
+    if not grouped:
+        raise ValueError(f"No subtitle lines found in {name}")
+    return Chapter.timed(title or subtitles.episode_title(name, number), grouped)
+
+
 def read_subtitles(path: Path, title: str | None = None, number: int = 1) -> Chapter:
     """One subtitle file as one timed chapter (an episode, or the whole film)."""
     from . import subtitles
 
-    grouped = subtitles.passages(subtitles.parse_cues(subtitles.decode(path.read_bytes())))
-    if not grouped:
-        raise ValueError(f"No subtitle lines found in {path.name}")
-    return Chapter(title or subtitles.episode_title(path.name, number), [g[0] for g in grouped],
-                   [(g[1], g[2]) for g in grouped])
+    return subtitle_chapter(subtitles.decode(path.read_bytes()), path.name, number, title)
 
 
 def read_book(path: Path) -> list[Chapter]:

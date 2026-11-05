@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 from . import keystore
 from .answer import MODEL, check_horizon
+from .cards import clip
 from .guard import is_future_question, refusal
 from .store import Library, Passage
 
@@ -56,8 +57,7 @@ class Session:
         arguments = arguments if isinstance(arguments, dict) else {}
         if name == "character_card":
             try:
-                return json.dumps(self.library.card(self.title, str(arguments.get("name", "")), self.horizon),
-                                  ensure_ascii=False)[:MAX_RESULT_CHARS]
+                return card_json(self.library.card(self.title, str(arguments.get("name", "")), self.horizon))
             except LookupError as exc:
                 return f"No card: {exc}"
         if name == "search_passages":
@@ -74,6 +74,22 @@ class Session:
             return f"Error: unknown tool {name}."
         check_horizon(passages, self.horizon)
         return format_results(passages)
+
+
+def card_json(card: dict, limit: int = MAX_RESULT_CHARS) -> str:
+    """The card as JSON that always parses: lists and excerpts shrink in steps until it fits, never sliced mid-text."""
+    text = ""
+    for related, described, excerpt in ((6, 3, 320), (4, 2, 200), (2, 1, 120), (0, 0, 60)):
+        def short(item):
+            return {**item, "text": clip(item["text"], excerpt)}
+
+        trimmed = {**card, "related": card["related"][:related], "described_as": [short(d) for d in card["described_as"][:described]],
+                   "first": short(card["first"]), "last": short(card["last"])}
+        text = json.dumps(trimmed, ensure_ascii=False)
+        if len(text) <= limit:
+            return text
+    return json.dumps({"name": card["name"], "kind": card["kind"], "mentions": card["mentions"], "chapters": card["chapters"]},
+                      ensure_ascii=False)
 
 
 def format_results(passages: list[Passage]) -> str:

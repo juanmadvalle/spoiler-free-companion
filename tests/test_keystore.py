@@ -40,6 +40,39 @@ class KeystoreTests(unittest.TestCase):
         self.assertFalse(keystore.clear())
         self.assertEqual(keystore.load(), {})
 
+    def test_a_failed_write_never_damages_the_saved_key(self):
+        keystore.save("gemini", SECRET, model="old")
+        original = self.config.read_text()
+        with patch("companion.keystore.os.replace", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                keystore.save("gemini", "AIzaSyANOTHERFAKEKEY0123456789abcdefghi", model="new")
+        self.assertEqual(self.config.read_text(), original)  # the old key survives
+        self.assertEqual(keystore.load()["api_key"], SECRET)
+        self.assertEqual([p.name for p in self.config.parent.iterdir()], ["config.json"])  # no temp file left behind
+
+    def test_the_credential_store_is_probed_and_read_once_not_on_every_lookup(self):
+        import sys
+        import types
+
+        calls = []
+        fake = types.ModuleType("keyring")
+        store = {}
+        fake.get_password = lambda service, user: calls.append(user) or store.get(user)
+        fake.set_password = lambda service, user, value: store.__setitem__(user, value)
+        fake.delete_password = lambda service, user: store.pop(user, None)
+        keystore._probe.cache_clear()
+        with patch.dict(sys.modules, {"keyring": fake}), patch.dict(os.environ, {"COMPANION_NO_KEYRING": ""}):
+            self.assertIn("credential store", keystore.save("gemini", SECRET))
+            self.assertNotIn(SECRET, self.config.read_text())  # the secret is not in the file
+            calls.clear()
+            for _ in range(5):
+                self.assertEqual(keystore.load()["api_key"], SECRET)
+                keystore.anthropic_key()
+            self.assertLessEqual(len(calls), 1)  # one read for five lookups
+            keystore.clear()
+            self.assertEqual(keystore.load(), {})
+        keystore._probe.cache_clear()
+
     def test_invalid_input_is_rejected(self):
         with self.assertRaises(ValueError):
             keystore.save("nope", SECRET)
