@@ -27,8 +27,11 @@ def _tokens(text: str):
     for match in _TOKEN.finditer(text):
         before = text[:match.start()].rstrip(" \"“”‘'(«¿¡—–-")  # opening quotes and Spanish dialogue marks
         initial = not before or before[-1] in ".!?:;"
+        if initial and before.endswith("."):  # "Mr. Watson": the period belongs to the honorific, not a sentence end
+            previous = re.search(r"([^\W\d_]+)\.$", before)
+            initial = not (previous and previous.group(1).lower() in HONORIFICS)
         word = match.group()
-        base = re.sub(r"['’]s?$", "", word.lower())  # "Holmes'" and "Holmes's" are just Holmes
+        base = re.sub(r"['’]s?$", "", word.lower()).replace("’", "'")  # "Holmes'" and "Holmes's" are just Holmes
         yield base, word[0].isupper(), initial, match.start(), match.end()
 
 
@@ -78,3 +81,44 @@ def expand_words(words: list[str], names: dict[tuple[str, ...], int], horizon: i
             if other != word and len(known[other]) == 1 and other not in words and other not in extra:
                 extra.append(other)
     return extra
+
+
+_SPEECH = frozenset(
+    "said asked replied cried answered whispered shouted exclaimed murmured remarked observed returned added "
+    "continued laughed sighed muttered declared "
+    "dijo preguntó respondió contestó exclamó gritó murmuró replicó añadió dice pregunta responde exclama "
+    "respondiéndole habló rió suspiró".split())
+_CONTRACTION = re.compile(r"'[^\W\d_]{1,2}$")  # I'll, don't, we're: "D'Artagnan" and "O'Brien" are longer and stay
+CARD_MIN_MENTIONS = 2  # capitalised mid-sentence mentions before a name gets a card
+_COMMON_TITLES = HONORIFICS | {"the", "el", "la"}
+
+
+def index_mentions(chunks: list[tuple[int, str]]) -> list[tuple[str, int, int, int, int, int]]:
+    """Per passage, how each capitalised-somewhere word occurs: (word, ordinal, cap_mid, tot_mid, occurrences, cues).
+
+    cap_mid / tot_mid count mid-sentence occurrences (capitalised / all); a cue is a speech verb right before or
+    after the word, or an honorific right before it. The reader's position decides later, at query time, which
+    words count as names, so nothing here depends on text the reader has not reached.
+    """
+    seen_capitalised = set()
+    parsed = []
+    for ordinal, text in chunks:
+        tokens = list(_tokens(text))
+        parsed.append((ordinal, tokens))
+        for word, is_cap, initial, _, _ in tokens:
+            if (is_cap and not initial and len(word) >= MIN_TOKEN and word not in _STOP_NAMES
+                    and word not in HONORIFICS and not _CONTRACTION.search(word)):
+                seen_capitalised.add(word)
+    rows = []
+    for ordinal, tokens in parsed:
+        stats = {}
+        for i, (word, is_cap, initial, _, _) in enumerate(tokens):
+            if word not in seen_capitalised:
+                continue
+            cap_mid, tot_mid, occ, cues = stats.get(word, (0, 0, 0, 0))
+            near_before = tokens[i - 1][0] if i else ""
+            near_after = [t[0] for t in tokens[i + 1:i + 3]]
+            cue = near_before in HONORIFICS or near_before in _SPEECH or any(w in _SPEECH for w in near_after)
+            stats[word] = (cap_mid + (is_cap and not initial), tot_mid + (not initial), occ + 1, cues + bool(cue))
+        rows.extend((word, ordinal, *values) for word, values in stats.items())
+    return rows

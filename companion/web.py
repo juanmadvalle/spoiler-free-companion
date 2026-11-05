@@ -77,6 +77,22 @@ class App:
         chapter = int(body.get("chapter", 0))
         return 0 if chapter <= 0 else library.horizon_after_chapter(title, chapter)
 
+    def characters(self, body: dict) -> list[dict]:
+        library = self.library()
+        try:
+            title = str(body["title"])
+            return library.characters(title, self.horizon(library, title, body))
+        finally:
+            library.close()
+
+    def card(self, body: dict) -> dict:
+        library = self.library()
+        try:
+            title = str(body["title"])
+            return library.card(title, str(body["name"]), self.horizon(library, title, body))
+        finally:
+            library.close()
+
     def locate(self, body: dict) -> dict:
         library = self.library()
         try:
@@ -271,6 +287,10 @@ def make_handler(app: App, port_getter):
                 elif method == "POST" and path == "/api/ingest":
                     result = app.ingest(query.get("filename", ""), body, query.get("title", ""),
                                         query.get("embed") == "1", query.get("lang", ""))
+                elif method == "POST" and path == "/api/characters":
+                    result = app.characters(body)
+                elif method == "POST" and path == "/api/card":
+                    result = app.card(body)
                 elif method == "POST" and path == "/api/locate":
                     result = app.locate(body)
                 elif method == "POST" and path == "/api/ask":

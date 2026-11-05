@@ -30,6 +30,10 @@ TOOLS = [
     {"name": "recent_passages",
      "description": "The most recent passages the reader has read, in reading order.",
      "input_schema": {"type": "object", "properties": {}}},
+    {"name": "character_card",
+     "description": "What is known so far about one named character or place: first appearance, how they are "
+                    "described, who they appear with, last seen. Only reflects what the reader has read.",
+     "input_schema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
     {"name": "read_chapter",
      "description": "Read passages of a chapter number already started; use offset to page forward.",
      "input_schema": {"type": "object", "properties": {
@@ -50,6 +54,12 @@ class Session:
     def run_tool(self, name: str, arguments: dict) -> str:
         """Execute one tool. Unknown or extra arguments (e.g. a made-up 'horizon') are ignored."""
         arguments = arguments if isinstance(arguments, dict) else {}
+        if name == "character_card":
+            try:
+                return json.dumps(self.library.card(self.title, str(arguments.get("name", "")), self.horizon),
+                                  ensure_ascii=False)[:MAX_RESULT_CHARS]
+            except LookupError as exc:
+                return f"No card: {exc}"
         if name == "search_passages":
             passages = self.library.search(self.title, str(arguments.get("query", "")), self.horizon, limit=6)
         elif name == "recent_passages":

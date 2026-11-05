@@ -62,6 +62,16 @@ details.sources summary { cursor: pointer; color: var(--muted); }
 .passage .meta { color: var(--muted); font-size: .8rem; }
 .progress { height: 6px; background: var(--line); border-radius: 4px; overflow: hidden; margin-top: 6px; }
 .progress > span { display: block; height: 100%; background: var(--accent); width: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.chip { border-radius: 999px; padding: 4px 12px; min-height: 36px; background: var(--soft); }
+.chip small { color: var(--muted); }
+.chip.other { background: var(--bg); }
+.chip.active { outline: 2px solid var(--accent); }
+details.people > summary { cursor: pointer; font-weight: 600; }
+.cardbox { margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.cardbox h3 { margin: 0 0 6px; font-size: 1.05rem; }
+.cardbox .row2 { margin: 6px 0; }
+.cardbox blockquote { margin: 4px 0 4px 8px; padding-left: 10px; border-left: 3px solid var(--line); color: var(--muted); }
 dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); max-width: 520px; width: calc(100% - 32px); padding: 20px; }
 dialog::backdrop { background: rgba(0,0,0,.45); }
 .err { color: var(--bad); }
@@ -125,6 +135,16 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
         </div>
         <p id="locateMsg" class="muted" role="status"></p>
         <div id="pos" class="pos"></div>
+      </section>
+
+      <section class="card" aria-labelledby="peopleTitle">
+        <details id="people" class="people">
+          <summary id="peopleTitle" data-i18n="peopleTitle"></summary>
+          <p class="muted" data-i18n="peopleHint"></p>
+          <div id="chips" class="chips" role="list"></div>
+          <p id="peopleMsg" class="muted" role="status"></p>
+          <div id="cardBox" class="cardbox" hidden></div>
+        </details>
       </section>
 
       <section class="card" aria-labelledby="askTitle">
@@ -207,6 +227,11 @@ const TEXT = {
     keyHelpAnthropic: "Se crea en console.anthropic.com (de pago).", keyHelpCustom: "Para Ollama no hace falta clave.",
     stored: "Guardada: ", none: "ninguna", saved: "Guardado.", removed: "Clave quitada.", needKey: "Pega una clave.",
     del: "Quitar", confirmDel: "¿Quitar este libro de la biblioteca?", chapters: " capítulos", semantic: "significado",
+    peopleTitle: "Personajes hasta aquí", peopleHint: "Solo nombres y datos de lo que ya has leído.",
+    noPeople: "Todavía no hay nombres suficientes hasta tu posición.", kindCharacter: "personaje", kindOther: "lugar u otro",
+    mentionsLabel: "menciones", inChapters: "en los capítulos", firstSeen: "Primera vez", describedAs: "Descrito así",
+    withLabel: "Aparece con", lastSeen: "Visto por última vez", askWho: "Preguntar a la IA quién es", whoIs: "¿Quién es ",
+    alsoCalled: "también: ", noCard: "Aún no hay ficha para ese nombre.",
     language: "Idioma del libro", auto: "Detectar automáticamente",
     adding: "Procesando…", added: "Añadido: ", embedding: "Calculando vectores… ", error: "Error: ", askFirst: "Escribe una pregunta.",
   },
@@ -235,6 +260,11 @@ const TEXT = {
     keyHelpAnthropic: "Created at console.anthropic.com (paid).", keyHelpCustom: "Ollama needs no key.",
     stored: "Stored: ", none: "none", saved: "Saved.", removed: "Key removed.", needKey: "Paste a key.",
     del: "Remove", confirmDel: "Remove this book from the library?", chapters: " chapters", semantic: "meaning",
+    peopleTitle: "Characters so far", peopleHint: "Only names and facts from what you have already read.",
+    noPeople: "Not enough names yet up to your position.", kindCharacter: "character", kindOther: "place or other",
+    mentionsLabel: "mentions", inChapters: "in chapters", firstSeen: "First seen", describedAs: "Described as",
+    withLabel: "Appears with", lastSeen: "Last seen", askWho: "Ask the AI who this is", whoIs: "Who is ",
+    alsoCalled: "also: ", noCard: "No card for that name yet.",
     language: "Book language", auto: "Detect automatically",
     adding: "Processing…", added: "Added: ", embedding: "Computing vectors… ", error: "Error: ", askFirst: "Type a question.",
   },
@@ -282,6 +312,7 @@ function describePosition() {
     const c = chapters.find((x) => x.number === pos.chapter);
     box.append(t("finished") + pos.chapter + (c ? ". " + c.title : ""));
   }
+  if ($("people").open) refreshPeople();
 }
 
 // ---- library ----------------------------------------------------------------------------------------------------
@@ -519,6 +550,100 @@ async function run(kind) {
 $("askBtn").addEventListener("click", () => run("ask"));
 $("recapBtn").addEventListener("click", () => run("recap"));
 $("question").addEventListener("keydown", (event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) run("ask"); });
+
+// ---- characters -------------------------------------------------------------------------------------------------
+let activeName = null;
+
+async function refreshPeople() {
+  if (!current) return;
+  const chips = $("chips");
+  $("peopleMsg").textContent = t("thinking");
+  try {
+    const people = await post("/api/characters", positionBody());
+    chips.textContent = "";
+    $("peopleMsg").textContent = people.length ? "" : t("noPeople");
+    for (const person of people) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "chip " + (person.kind === "character" ? "" : "other") + (person.name === activeName ? " active" : "");
+      chip.setAttribute("role", "listitem");
+      chip.append(person.name + " ");
+      const count = document.createElement("small");
+      count.textContent = String(person.mentions);
+      chip.append(count);
+      chip.addEventListener("click", () => showCard(person.name));
+      chips.append(chip);
+    }
+    if (activeName) await showCard(activeName, true);
+  } catch (error) {
+    $("peopleMsg").textContent = t("error") + error.message;
+  }
+}
+
+function line(parent, label, text, ordinal) {
+  const row = document.createElement("div");
+  row.className = "row2";
+  const strong = document.createElement("strong");
+  strong.textContent = label + (ordinal != null ? " [" + ordinal + "]" : "") + ": ";
+  row.append(strong);
+  const quote = document.createElement("blockquote");
+  quote.textContent = text;
+  row.append(quote);
+  parent.append(row);
+}
+
+async function showCard(name, quiet = false) {
+  const box = $("cardBox");
+  try {
+    const card = await post("/api/card", { ...positionBody(), name });
+    activeName = card.name;
+    box.hidden = false;
+    box.textContent = "";
+    const title = document.createElement("h3");
+    title.textContent = card.name + (card.aliases.length ? " (" + t("alsoCalled") + card.aliases.join(", ") + ")" : "");
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = t(card.kind === "character" ? "kindCharacter" : "kindOther");
+    const stats = document.createElement("p");
+    stats.className = "muted";
+    const span = card.chapters.length > 1 ? card.chapters[0] + "–" + card.chapters[card.chapters.length - 1] : String(card.chapters[0]);
+    stats.textContent = card.mentions + " " + t("mentionsLabel") + " · " + t("inChapters") + " " + span;
+    box.append(title, badge, stats);
+    line(box, t("firstSeen"), card.first.text, card.first.ordinal);
+    for (const d of card.described_as) line(box, t("describedAs"), d.text, d.ordinal);
+    if (card.related.length) {
+      const row = document.createElement("div");
+      row.className = "row2";
+      const strong = document.createElement("strong");
+      strong.textContent = t("withLabel") + ": ";
+      row.append(strong);
+      const related = document.createElement("span");
+      related.className = "chips";
+      for (const r of card.related) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "chip other";
+        chip.textContent = r.name + " (" + r.together + ")";
+        chip.addEventListener("click", () => showCard(r.name));
+        related.append(chip);
+      }
+      row.append(related);
+      box.append(row);
+    }
+    if (card.last.ordinal !== card.first.ordinal) line(box, t("lastSeen"), card.last.text, card.last.ordinal);
+    const ask = document.createElement("button");
+    ask.type = "button";
+    ask.textContent = t("askWho");
+    ask.addEventListener("click", () => { $("question").value = t("whoIs") + card.name + "?"; run("ask"); });
+    box.append(ask);
+    if (!quiet) box.scrollIntoView({ block: "nearest" });
+  } catch (error) {
+    activeName = null;
+    box.hidden = quiet;
+    if (!quiet) { box.hidden = false; box.textContent = t("noCard"); }
+  }
+}
+$("people").addEventListener("toggle", () => { if ($("people").open) refreshPeople(); });
 
 // ---- settings ---------------------------------------------------------------------------------------------------
 function keyHelp() {

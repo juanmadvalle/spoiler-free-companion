@@ -6,12 +6,18 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import cards
 from . import lang as langs
 from .ingest import Chapter, chunk
-from .names import expand_words, extract_names
+from .names import expand_words, extract_names, index_mentions
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS names (work_id INTEGER NOT NULL, name TEXT NOT NULL, first_seen INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS mentions (
+    work_id INTEGER NOT NULL, token TEXT NOT NULL, ordinal INTEGER NOT NULL,
+    cap_mid INTEGER NOT NULL, tot_mid INTEGER NOT NULL, occ INTEGER NOT NULL, cues INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS mentions_by_token ON mentions (work_id, token, ordinal);
+CREATE INDEX IF NOT EXISTS mentions_by_ordinal ON mentions (work_id, ordinal);
 CREATE TABLE IF NOT EXISTS vectors (
     work_id INTEGER NOT NULL, ordinal INTEGER NOT NULL, model TEXT NOT NULL, vec BLOB NOT NULL,
     PRIMARY KEY (work_id, ordinal, model));
@@ -86,7 +92,33 @@ class Library:
                                     (row, " ".join(langs.stems(text, language))))
             self.db.executemany("INSERT INTO names (work_id, name, first_seen) VALUES (?,?,?)",
                                 [(work_id, " ".join(n), seen) for n, seen in extract_names(texts).items()])
+            self._insert_mentions(work_id, texts)
         return len(pieces)
+
+    def _insert_mentions(self, work_id: int, texts: list[tuple[int, str]]) -> None:
+        self.db.executemany("INSERT INTO mentions (work_id, token, ordinal, cap_mid, tot_mid, occ, cues) "
+                            "VALUES (?,?,?,?,?,?,?)", [(work_id, *row) for row in index_mentions(texts)])
+
+    def _ensure_mentions(self, work_id: int) -> None:
+        """Books added before character cards existed get their mention index built on first use."""
+        if self.db.execute("SELECT 1 FROM mentions WHERE work_id = ? LIMIT 1", (work_id,)).fetchone():
+            return
+        texts = self.db.execute("SELECT ordinal, text FROM chunks WHERE work_id = ? ORDER BY ordinal", (work_id,)).fetchall()
+        if texts:
+            with self.db:
+                self._insert_mentions(work_id, texts)
+
+    def characters(self, title: str, horizon: int, limit: int = 40) -> list[dict]:
+        """Names met so far (at or before the horizon), most mentioned first."""
+        work_id = self._work(title)
+        self._ensure_mentions(work_id)
+        return cards.list_characters(self.db, work_id, horizon, limit)
+
+    def card(self, title: str, name: str, horizon: int) -> dict:
+        """What is known about one name using only passages at or before the horizon."""
+        work_id = self._work(title)
+        self._ensure_mentions(work_id)
+        return cards.card(self.db, work_id, self.lang_of(title), name, horizon)
 
     def lang_of(self, title: str) -> str:
         return self.db.execute("SELECT lang FROM works WHERE id = ?", (self._work(title),)).fetchone()[0]
@@ -103,6 +135,7 @@ class Library:
                     self.db.execute("DELETE FROM chunks_fts_x WHERE rowid = ?", (chunk_id,))
             self.db.execute("DELETE FROM chunks WHERE work_id = ?", row)
             self.db.execute("DELETE FROM names WHERE work_id = ?", row)
+            self.db.execute("DELETE FROM mentions WHERE work_id = ?", row)
             self.db.execute("DELETE FROM vectors WHERE work_id = ?", row)
             self.db.execute("DELETE FROM works WHERE id = ?", row)
 

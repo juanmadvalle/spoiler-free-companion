@@ -115,6 +115,21 @@ class WebTests(unittest.TestCase):
         self.assertEqual(data["passages"], [])
         self.assertIn("not established", data["answer"])
 
+    def test_characters_and_cards_over_http_respect_the_position(self):
+        # CHAPTERS plant a secret word per chapter; names found at chapter 1 must not include later ones
+        status, early = self.api("POST", "/api/characters", {"title": "S", "chapter": 1})
+        self.assertEqual(status, 200)
+        blob = json.dumps(early)
+        for secret in SECRETS[1:]:
+            self.assertNotIn(secret, blob.lower())
+        self.assertEqual(self.api("POST", "/api/characters", {"title": "S", "ordinal": 10**6})[0], 400)
+        self.assertEqual(self.api("POST", "/api/card", {"title": "S", "chapter": 1})[0], 400)  # no name given
+        self.assertEqual(self.api("POST", "/api/card", {"title": "S", "chapter": 1, "name": "Nobody"})[0], 404)
+        if early:
+            status, card = self.api("POST", "/api/card", {"title": "S", "chapter": 1, "name": early[0]["name"]})
+            self.assertEqual(status, 200)
+            self.assertLessEqual(card["last"]["chapter"], 1)
+
     def test_unknown_book_and_chapter(self):
         self.assertEqual(self.api("POST", "/api/ask", {"title": "Nope", "chapter": 1, "question": "x"})[0], 400)
         self.assertEqual(self.api("POST", "/api/ask", {"title": "S", "chapter": 99, "question": "crystal"})[0], 400)

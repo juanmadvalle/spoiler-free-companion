@@ -44,9 +44,12 @@ def main(argv=None) -> int:
     chap = sub.add_parser("chapters", help="List chapter numbers")
     chap.add_argument("title")
 
-    for name, help_text in (("ask", "Ask a question about what you've read"), ("recap", "Recap where you are")):
+    for name, help_text in (("ask", "Ask a question about what you've read"), ("recap", "Recap where you are"),
+                            ("characters", "Names met so far"), ("card", "What is known about one name so far")):
         command = sub.add_parser(name, help=help_text)
         command.add_argument("title")
+        if name == "card":
+            command.add_argument("name")
         where = command.add_mutually_exclusive_group(required=True)
         where.add_argument("--chapter", type=int, help="I have finished this chapter")
         where.add_argument("--phrase", help="A line you remember reading last")
@@ -94,7 +97,13 @@ def main(argv=None) -> int:
                 print(f"Located you at chapter {found.chapter} ({found.chapter_title}):\n  \"{found.text[:160]}...\"\n")
             else:
                 horizon = library.horizon_after_chapter(args.title, args.chapter)
-            if args.command == "ask" and args.agent:
+            if args.command == "characters":
+                for entry in library.characters(args.title, horizon):
+                    aka = f" (also {', '.join(entry['aliases'])})" if entry["aliases"] else ""
+                    print(f"{entry['name']}{aka}: {entry['kind']}, {entry['mentions']} mentions")
+            elif args.command == "card":
+                print(format_card(library.card(args.title, args.name, horizon)))
+            elif args.command == "ask" and args.agent:
                 session = Session(library, args.title, horizon)
                 print(run_agent(session, args.question))
                 if args.verbose:
@@ -109,6 +118,21 @@ def main(argv=None) -> int:
         return 1
     finally:
         library.close()
+
+
+def format_card(card: dict) -> str:
+    def span(chapters):
+        return f"{chapters[0]}-{chapters[-1]}" if len(chapters) > 1 else str(chapters[0])
+
+    aka = f" (also {', '.join(card['aliases'])})" if card["aliases"] else ""
+    lines = [f"{card['name']}{aka}: {card['kind']}, {card['mentions']} mentions in chapters {span(card['chapters'])}",
+             f"  First seen [{card['first']['ordinal']}] chapter {card['first']['chapter']}: {card['first']['text']}"]
+    lines += [f"  Described [{d['ordinal']}]: {d['text']}" for d in card["described_as"]]
+    if card["related"]:
+        lines.append("  With: " + ", ".join(f"{r['name']} ({r['together']})" for r in card["related"]))
+    if card["last"]["ordinal"] != card["first"]["ordinal"]:
+        lines.append(f"  Last seen [{card['last']['ordinal']}] chapter {card['last']['chapter']}: {card['last']['text']}")
+    return "\n".join(lines)
 
 
 def _embed(library: Library, title: str) -> None:

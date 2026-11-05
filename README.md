@@ -28,6 +28,14 @@ python -m companion recap "My Book" --phrase "a line I just read"
 python -m unittest discover -s tests -t .
 ```
 
+### Character cards
+
+`python -m companion characters "My Book" --chapter 5` lists the names met so far and `card "My Book" Holmes --chapter 5` shows what is known about one: other names it goes by (Sherlock Holmes → Holmes), first and last appearance with passage numbers, sentences that say who they are ("X was a ...", "X, the ..."), and who they appear with. In the web page it is the "Characters so far" section; clicking a name opens its card, and one more click asks the AI who they are. The agent has a `character_card(name)` tool.
+
+No AI is needed. Cards are computed on the fly from an index of where each name occurs, always with `ordinal <= your position`, and even *whether a word counts as a name* is decided from the mentions up to your position. So a character who only appears later has no entry and no card yet, and a name never shows who they end up appearing with. Tests check this on all six real books: for ten positions each, every name, alias, excerpt and "appears with" entry in the cards must use only words that exist at or before that position. Two real bugs came out of those tests and were fixed (contractions like "I'll" counted as names; an excerpt cut in the middle of a word).
+
+Limits: it only knows capitalised names that appear mid-sentence, so it cannot tell a person from a place without cues (speech verbs, honorifics); those are labelled `character` or `other`. Descriptions are the book's own sentences, not a summary, and "appears with" counts shared passages, not relationships. Nicknames and pronouns are not resolved.
+
 ### Spanish books
 
 Spanish is supported alongside English. The language of each book is detected when you add it (or set it with `ingest --lang es`, or the language selector on the web page) and shown as `ES`/`EN`. Spanish books get:

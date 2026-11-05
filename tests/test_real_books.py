@@ -37,6 +37,19 @@ def fetch(book_id: int) -> Path | None:
     return path
 
 
+def strings(value):
+    """Every string value (not key) inside nested lists and dicts."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if key != "kind":  # a label made by the program ("character"/"other"), not text from the book
+                yield from strings(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from strings(item)
+
+
 def spread(items: list, count: int) -> list:
     """Deterministic, evenly spaced sample."""
     step = max(1, len(items) // count)
@@ -127,6 +140,29 @@ class RealBookTests(unittest.TestCase):
                 self.assertTrue(loaded)
                 self.assertTrue(all(row[0] <= horizon for row in loaded))
                 loaded.clear()
+
+    def test_character_cards_contain_no_future_only_words(self):
+        """Every name, alias, excerpt and related name in any card must exist at or before the reader's position."""
+        for title, library, chapters, words in self.each_book():
+            checked = 0
+            for k in spread(list(range(1, len(chapters))), 10):
+                titles = {w for c in chapters[:k] for w in _words(c.title)}  # headings of chapters already reached
+                seen = set().union(*words[:k]) | titles
+                future_only = set().union(*words[k:]) - seen
+                horizon = library.horizon_after_chapter(title, k)
+                people = library.characters(title, horizon)
+                self.assertTrue(people, f"no names after chapter {k}")
+                outputs = [people]
+                for person in people[:8]:
+                    card = library.card(title, person["name"], horizon)
+                    outputs.append(card)
+                    for related in card["related"][:2]:
+                        outputs.append(library.card(title, related["name"], horizon))
+                    checked += 1
+                leaked = {w for text in strings(outputs) for w in _words(text)} & future_only
+                self.assertFalse(leaked, f"{title} after chapter {k}: {sorted(leaked)[:5]}")
+                self.assertFalse({c["name"].lower() for c in people} & future_only)  # a later name has no entry yet
+            self.assertGreater(checked, 10)
 
     def test_first_appearance_traps(self):
         """A character is invisible until the chapter they first appear in."""
