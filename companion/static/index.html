@@ -3,97 +3,203 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Spoiler-free companion</title>
+<title>Bookmark</title>
 <style nonce="__NONCE__">
 :root {
   color-scheme: light dark;
-  --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1d1b; --muted: #5f5e58; --line: #dedbd2;
-  --accent: #2a5d9f; --accent-ink: #ffffff; --soft: #e8eef7; --ok: #1f6b3a; --warn: #8a5a00; --bad: #a12b2b;
-  --radius: 10px; --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 14px rgba(0,0,0,.05);
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* light theme: parchment and bronze */
+  --bg: #f4eee1; --panel: #fffaf0; --raised: #fbf4e6; --soft: #efe5d0; --line: #d9cbb0; --input: #fffdf7;
+  --ink: #2b2318; --muted: #6a5d48; --accent: #8b5a12; --accent-ink: #fffaf0; --glow: rgba(139, 90, 18, .10);
+  --ok: #2e6b3d; --warn: #8a5a00; --bad: #9a3326;
+  --radius: 14px; --shadow: 0 1px 2px rgba(60, 40, 10, .06), 0 14px 30px -18px rgba(60, 40, 10, .30);
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #151618; --panel: #1e2023; --ink: #ecebe6; --muted: #a3a29b; --line: #34363a;
-    --accent: #7aa9e6; --accent-ink: #0f1a2b; --soft: #26303f; --ok: #6fcf97; --warn: #e6b34d; --bad: #f08a8a;
-    --shadow: none; }
+  :root {
+    /* dark theme: warm ink and gold, not cold grey-blue */
+    --bg: #14110e; --panel: #1d1915; --raised: #26211b; --soft: #2c251d; --line: #3b3329; --input: #16130f;
+    --ink: #f2ebdd; --muted: #b8ac95; --accent: #d9ad62; --accent-ink: #1a1409; --glow: rgba(217, 173, 98, .12);
+    --ok: #9fcfa6; --warn: #e6b865; --bad: #eba295;
+    --shadow: 0 1px 0 rgba(255, 255, 255, .03) inset, 0 18px 40px -22px rgba(0, 0, 0, .85);
+  }
 }
 * { box-sizing: border-box; }
-html { font-size: 16px; }
-body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.5;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+html { font-size: 16px; scrollbar-color: var(--line) transparent; }
+body { margin: 0; color: var(--ink); line-height: 1.55; font-family: var(--sans);
+  background: radial-gradient(900px 420px at 50% -90px, var(--glow), transparent 70%) no-repeat, var(--bg); min-height: 100vh; }
+::selection { background: var(--glow); color: var(--ink); }
 button, input, select, textarea { font: inherit; color: inherit; }
-header.top { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line);
-  background: var(--panel); position: sticky; top: 0; z-index: 5; }
-header.top h1 { font-size: 1.05rem; margin: 0; font-weight: 650; flex: 1; }
-.layout { display: grid; grid-template-columns: 300px 1fr; gap: 20px; padding: 20px; max-width: 1180px; margin: 0 auto; }
-@media (max-width: 820px) { .layout { grid-template-columns: 1fr; padding: 12px; } aside { order: 2; } }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; }
-.card + .card { margin-top: 16px; }
-h2 { font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; font-weight: 650; }
-label { display: block; font-size: .9rem; color: var(--muted); margin: 10px 0 4px; }
+input[type=checkbox] { accent-color: var(--accent); }
+
+header.top { position: relative; padding: 42px 24px 8px; text-align: center; }
+header.top::after { content: ""; display: block; width: min(420px, 60%); height: 1px; margin: 26px auto 0;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: .55; }
+.brand .mark { color: var(--accent); }
+.brand h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(2.1rem, 4.6vw, 3.1rem); letter-spacing: .03em;
+  margin: 8px 0 6px; line-height: 1.1; }
+.tagline { font-family: var(--serif); font-style: italic; color: var(--muted); font-size: 1.12rem; margin: 0 auto; max-width: 560px; }
+.tools { position: absolute; top: 14px; right: 118px; display: flex; align-items: center; gap: 10px; }
+@media (max-width: 700px) { header.top { padding-top: 18px; } .tools { position: static; justify-content: center; margin-bottom: 20px; } }
+
+.layout { display: grid; grid-template-columns: 300px 1fr; gap: 24px; padding: 28px 24px 56px; max-width: 1120px; margin: 0 auto; }
+@media (max-width: 820px) { .layout { grid-template-columns: 1fr; padding: 16px 14px 40px; } aside { order: 2; }
+  body.choosing aside { order: 0; } /* nothing chosen yet: the library and the add form come first */ }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 22px; }
+.card + .card { margin-top: 18px; }
+h2 { font-size: .72rem; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px; font-weight: 700; }
+label { display: block; font-size: .9rem; color: var(--muted); margin: 12px 0 5px; }
 input[type=text], input[type=password], input[type=file], select, textarea {
-  width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
-textarea { min-height: 84px; resize: vertical; }
-:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-button { cursor: pointer; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 9px 14px; min-height: 40px; }
-button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--input); }
+input[type=file]::file-selector-button { margin-right: 12px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--raised); color: var(--ink); cursor: pointer; }
+input:hover, select:hover, textarea:hover { border-color: var(--muted); }
+textarea { min-height: 96px; resize: vertical; font-family: var(--serif); font-size: 1.04rem; line-height: 1.5; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+button { cursor: pointer; border: 1px solid var(--line); background: var(--raised); color: var(--ink); border-radius: 10px;
+  padding: 9px 16px; min-height: 40px; }
+button:not(.pick, .link, .chip, .cite):hover:not(:disabled) { border-color: var(--accent); background: var(--soft); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 650; }
+button.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
 button.link { border: 0; background: none; color: var(--accent); padding: 2px 4px; min-height: 0; text-decoration: underline; }
 button:disabled { opacity: .55; cursor: not-allowed; }
+@media (prefers-reduced-motion: no-preference) {
+  button, input, select, textarea, .chip, .passage { transition: background-color .15s, border-color .15s, filter .15s, outline-color .3s; }
+}
+
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .row > .grow { flex: 1; min-width: 160px; }
 .muted { color: var(--muted); font-size: .9rem; }
 .books { list-style: none; margin: 0; padding: 0; }
-.books li { display: flex; align-items: center; gap: 6px; border-radius: 8px; }
-.books li.active { background: var(--soft); }
-.books .pick { flex: 1; text-align: left; border: 0; background: none; padding: 10px; border-radius: 8px; }
-.books .pick small { display: block; color: var(--muted); }
-.badge { display: inline-block; font-size: .75rem; padding: 2px 8px; border-radius: 999px; background: var(--soft); color: var(--ink); }
+.books li { display: flex; align-items: center; gap: 6px; border-radius: 10px; }
+.books li.active { background: var(--soft); box-shadow: inset 3px 0 0 var(--accent); }
+.books .pick { flex: 1; text-align: left; border: 0; background: none; padding: 11px 12px; border-radius: 10px; font-family: var(--serif);
+  font-size: 1.05rem; }
+.books .pick:hover { background: var(--soft); }
+.books .pick small { display: block; color: var(--muted); font-family: var(--sans); font-size: .8rem; }
+.badge { display: inline-block; font-size: .75rem; padding: 3px 10px; border-radius: 999px; background: var(--raised);
+  border: 1px solid var(--line); color: var(--ink); }
 .badge.ok { color: var(--ok); } .badge.warn { color: var(--warn); } .badge.bad { color: var(--bad); }
-.pos { margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: var(--soft); }
-.empty { text-align: center; padding: 48px 16px; }
-.empty ol { text-align: left; display: inline-block; margin: 16px 0 0; padding-left: 20px; }
+.pos { margin-top: 14px; padding: 11px 14px; border-radius: 10px; background: var(--soft); border-left: 3px solid var(--accent); }
+
+.empty { text-align: center; padding: 60px 24px 52px; }
+.empty h2 { font-family: var(--serif); text-transform: none; letter-spacing: 0; color: var(--ink); font-weight: 600;
+  font-size: clamp(1.45rem, 3vw, 1.95rem); line-height: 1.25; margin: 0 auto 12px; max-width: 620px; }
+.empty > p { max-width: 520px; margin: 0 auto; font-size: 1rem; }
+.empty ol { list-style: none; counter-reset: step; text-align: left; display: inline-block; margin: 30px 0 0; padding: 0; }
+.empty li { counter-increment: step; position: relative; padding: 4px 0 0 46px; margin: 14px 0; min-height: 30px; line-height: 1.45; }
+.empty li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center; border: 1px solid var(--accent); color: var(--accent); background: var(--soft);
+  font-weight: 650; font-size: .88rem; line-height: 1; }
+
 .answer { border-left: 4px solid var(--accent); }
-.answer .text { white-space: pre-wrap; margin: 8px 0; }
+.answer .text { white-space: pre-wrap; margin: 10px 0; font-family: var(--serif); font-size: 1.1rem; line-height: 1.7; }
 .answer.refused { border-left-color: var(--warn); }
-.cite { border: 1px solid var(--line); background: var(--soft); border-radius: 6px; padding: 0 6px; min-height: 0; font-size: .85rem; }
-details.sources { margin-top: 10px; }
+.cite { border: 1px solid var(--line); background: var(--soft); border-radius: 6px; padding: 0 6px; min-height: 0; font-size: .85rem;
+  color: var(--accent); }
+.cite:hover { border-color: var(--accent); }
+details.sources { margin-top: 12px; }
 details.sources summary { cursor: pointer; color: var(--muted); }
-.passage { margin: 8px 0; padding: 8px 10px; border-radius: 8px; background: var(--bg); font-size: .92rem; }
+.passage { margin: 8px 0; padding: 10px 12px; border-radius: 10px; background: var(--input); border: 1px solid var(--line);
+  font-size: .94rem; }
 .passage.flash { outline: 2px solid var(--accent); }
-.passage .meta { color: var(--muted); font-size: .8rem; }
-.progress { height: 6px; background: var(--line); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+.passage .meta { color: var(--muted); font-size: .8rem; margin-bottom: 2px; }
+.progress { height: 6px; background: var(--line); border-radius: 4px; overflow: hidden; margin-top: 8px; }
 .progress > span { display: block; height: 100%; background: var(--accent); width: 0; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-.chip { border-radius: 999px; padding: 4px 12px; min-height: 36px; background: var(--soft); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.chip { border-radius: 999px; padding: 4px 14px; min-height: 36px; background: var(--raised); border: 1px solid var(--line); }
+.chip:hover { border-color: var(--accent); }
 .chip small { color: var(--muted); }
-.chip.other { background: var(--bg); }
+.chip.other { background: transparent; }
 .chip.active { outline: 2px solid var(--accent); }
-details.people > summary { cursor: pointer; font-weight: 600; }
-.cardbox { margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
-.cardbox h3 { margin: 0 0 6px; font-size: 1.05rem; }
-.cardbox .row2 { margin: 6px 0; }
-.cardbox blockquote { margin: 4px 0 4px 8px; padding-left: 10px; border-left: 3px solid var(--line); color: var(--muted); }
-dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); max-width: 520px; width: calc(100% - 32px); padding: 20px; }
-dialog::backdrop { background: rgba(0,0,0,.45); }
+details.people > summary { cursor: pointer; font-family: var(--serif); font-size: 1.15rem; font-weight: 600; }
+.cardbox { margin-top: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--input); }
+.cardbox h3 { margin: 0 0 6px; font-family: var(--serif); font-size: 1.3rem; font-weight: 600; }
+.cardbox .row2 { margin: 8px 0; }
+.cardbox blockquote { margin: 4px 0 4px 8px; padding-left: 12px; border-left: 3px solid var(--accent); color: var(--muted);
+  font-family: var(--serif); font-size: 1.02rem; }
+.guide { max-width: 1120px; margin: 6px auto 0; padding: 0 24px; }
+.guide-card { background: var(--panel); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 20px 24px 22px; text-align: center; }
+.steps { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 0; margin: 0 0 16px; }
+.steps li { display: flex; align-items: center; gap: 8px; padding: 4px 14px 4px 5px; border-radius: 999px; border: 1px solid var(--line);
+  color: var(--muted); font-size: .9rem; }
+.steps .n { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--soft);
+  font-weight: 700; font-size: .8rem; }
+.steps li.current { color: var(--ink); border-color: var(--accent); }
+.steps li.current .n { background: var(--accent); color: var(--accent-ink); }
+.steps li.done .n { background: var(--ok); color: var(--panel); }
+.guide-title { font-family: var(--serif); font-size: clamp(1.25rem, 2.6vw, 1.6rem); font-weight: 600; margin: 0 0 8px; }
+.guide-text { margin: 0 auto; max-width: 720px; font-size: 1.04rem; }
+.card.focus { outline: 2px solid var(--accent); outline-offset: 0; box-shadow: 0 0 0 7px var(--glow), var(--shadow); }
+@media (prefers-reduced-motion: no-preference) {
+  .card.focus { animation: glow 2.4s ease-in-out infinite; }
+  @keyframes glow { 50% { box-shadow: 0 0 0 12px var(--glow), var(--shadow); } }
+}
+@media (max-width: 820px) { .guide { padding: 0 14px; } .guide-card { padding: 16px 16px 18px; } }
+.note { margin: 0 0 14px; padding: 10px 14px; border: 1px dashed var(--accent); border-radius: 10px; background: var(--soft); font-size: .95rem; }
+.lang { position: fixed; top: 12px; right: 12px; z-index: 30; display: flex; padding: 3px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.lang button { min-height: 32px; padding: 3px 12px; border: 0; border-radius: 999px; background: transparent; color: var(--muted);
+  font-weight: 700; font-size: .82rem; letter-spacing: .06em; }
+.lang button:hover:not(:disabled) { background: var(--soft); border: 0; }
+.lang button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.lang button[aria-pressed="true"]:hover:not(:disabled) { background: var(--accent); }
+details.adv { margin: 8px 0 4px; }
+details.adv > summary { cursor: pointer; color: var(--muted); font-size: .92rem; }
+.howto-title { font-weight: 650; margin: 14px 0 4px; }
+.howto { margin: 0 0 12px; padding-left: 22px; }
+.howto li { margin: 5px 0; }
+input[type=file] { font-size: .85rem; }
+button.primary { min-height: 44px; }
+dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); max-width: 540px;
+  width: calc(100% - 32px); padding: 24px; box-shadow: var(--shadow); }
+dialog::backdrop { background: rgba(10, 8, 5, .62); }
 .err { color: var(--bad); }
 .sr { position: absolute; left: -9999px; }
-@media (prefers-reduced-motion: no-preference) { .passage { transition: outline-color .3s; } }
 </style>
 </head>
 <body>
+<div class="lang" role="group" aria-label="Idioma / Language">
+  <button type="button" data-lang="es" title="Español" aria-pressed="false">ES</button>
+  <button type="button" data-lang="en" title="English" aria-pressed="false">EN</button>
+</div>
+
 <header class="top">
-  <h1 data-i18n="title"></h1>
-  <span id="llmBadge" class="badge" role="status"></span>
-  <button id="openSettings" data-i18n="settings"></button>
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 24 24" width="30" height="30" aria-hidden="true" focusable="false"><path fill="currentColor" d="M6 2h12a1.5 1.5 0 0 1 1.5 1.5V22l-7.5-4.8L4.5 22V3.5A1.5 1.5 0 0 1 6 2z"/></svg>
+    <h1 data-i18n="title"></h1>
+    <p class="tagline" data-i18n="tagline"></p>
+  </div>
+  <div class="tools">
+    <span id="llmBadge" class="badge" role="status"></span>
+    <button id="openHelp" data-i18n="openHelp"></button>
+    <button id="openSettings" data-i18n="settings"></button>
+  </div>
 </header>
+
+<section id="guide" class="guide" role="status" aria-live="polite">
+  <div class="guide-card">
+    <ol id="steps" class="steps">
+      <li><span class="n">1</span><span data-i18n="stepBook"></span></li>
+      <li><span class="n">2</span><span data-i18n="stepPlace"></span></li>
+      <li><span class="n">3</span><span data-i18n="stepAsk"></span></li>
+    </ol>
+    <p id="guideTitle" class="guide-title"></p>
+    <p id="guideText" class="guide-text"></p>
+  </div>
+</section>
 
 <main class="layout">
   <aside>
-    <section class="card" aria-labelledby="libTitle">
+    <section id="libCard" class="card" aria-labelledby="libTitle">
       <h2 id="libTitle" data-i18n="library"></h2>
       <ul id="books" class="books"></ul>
       <p id="noBooks" class="muted" data-i18n="noBooks"></p>
     </section>
-    <section class="card" aria-labelledby="addTitle">
+    <section id="addCard" class="card" aria-labelledby="addTitle">
       <h2 id="addTitle" data-i18n="addBook"></h2>
       <form id="addForm">
         <label for="file" data-i18n="file"></label>
@@ -123,7 +229,7 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
     </div>
 
     <div id="bookView" hidden>
-      <section class="card" aria-labelledby="posTitle">
+      <section id="posCard" class="card" aria-labelledby="posTitle">
         <h2 id="posTitle" data-i18n="where"></h2>
         <h3 id="bookName" class="sr"></h3>
         <label for="chapter" id="finishedLabel" data-i18n="finishedChapter"></label>
@@ -155,8 +261,13 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
         </details>
       </section>
 
-      <section class="card" aria-labelledby="askTitle">
+      <section id="askCard" class="card" aria-labelledby="askTitle">
         <h2 id="askTitle" data-i18n="ask"></h2>
+        <p id="llmNote" class="note" hidden><span data-i18n="llmNoteText"></span> <button id="openAi" type="button" class="link" data-i18n="openAiSettings"></button></p>
+        <div id="examplesBox" hidden>
+          <p class="muted" data-i18n="tryExample"></p>
+          <div id="examples" class="chips"></div>
+        </div>
         <label for="question" class="sr" data-i18n="question"></label>
         <textarea id="question" data-i18n-ph="questionPh"></textarea>
         <div class="row">
@@ -172,10 +283,21 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
   </section>
 </main>
 
+<dialog id="helpDialog" aria-labelledby="helpHeading">
+  <h2 id="helpHeading" data-i18n="helpTitle"></h2>
+  <p data-i18n="helpP1"></p>
+  <p data-i18n="helpP2"></p>
+  <p data-i18n="helpP3"></p>
+  <p data-i18n="helpP4"></p>
+  <div class="row"><button id="closeHelp" class="primary" type="button" data-i18n="close"></button></div>
+</dialog>
+
 <dialog id="settings" aria-labelledby="setTitle">
   <form method="dialog" id="setForm">
     <h2 id="setTitle" data-i18n="llmSettings"></h2>
     <p class="muted" data-i18n="llmIntro"></p>
+    <p class="howto-title" data-i18n="howtoTitle"></p>
+    <ol class="howto"><li data-i18n="howto1"></li><li data-i18n="howto2"></li><li data-i18n="howto3"></li></ol>
     <p id="current" class="muted"></p>
     <label for="provider" data-i18n="provider"></label>
     <select id="provider">
@@ -186,14 +308,17 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
     <label for="apiKey" data-i18n="apiKey"></label>
     <input id="apiKey" type="password" autocomplete="off" spellcheck="false">
     <p class="muted" id="keyHelp"></p>
-    <label for="baseUrl" data-i18n="baseUrl"></label>
-    <input id="baseUrl" type="text" placeholder="http://localhost:11434/v1" autocomplete="off">
-    <label for="model" data-i18n="model"></label>
-    <div class="row">
-      <input id="model" class="grow" type="text" list="modelList" autocomplete="off">
-      <datalist id="modelList"></datalist>
-      <button id="listModels" type="button" data-i18n="listModels"></button>
-    </div>
+    <details class="adv">
+      <summary data-i18n="advanced"></summary>
+      <label for="baseUrl" data-i18n="baseUrl"></label>
+      <input id="baseUrl" type="text" placeholder="http://localhost:11434/v1" autocomplete="off">
+      <label for="model" data-i18n="model"></label>
+      <div class="row">
+        <input id="model" class="grow" type="text" list="modelList" autocomplete="off">
+        <datalist id="modelList"></datalist>
+        <button id="listModels" type="button" data-i18n="listModels"></button>
+      </div>
+    </details>
     <p id="setMsg" class="muted" role="status"></p>
     <div class="row">
       <button class="primary" id="saveKey" type="button" data-i18n="save"></button>
@@ -207,12 +332,14 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 <script nonce="__NONCE__">
 "use strict";
 const TOKEN = "__TOKEN__";
-const LANG = (navigator.language || "en").toLowerCase().startsWith("es") ? "es" : "en";
+const savedLanguage = localStorage.getItem("lang");
+let LANG = savedLanguage === "es" || savedLanguage === "en" ? savedLanguage
+  : ((navigator.language || "en").toLowerCase().startsWith("es") ? "es" : "en");
 const TEXT = {
   es: {
-    title: "Compañero de lectura sin spoilers", settings: "Ajustes de IA", library: "Mi biblioteca",
-    noBooks: "Aún no has añadido ningún libro.", addBook: "Añadir un libro", file: "Archivos (.epub, .txt o subtítulos .srt/.vtt)",
-    bookTitle: "Título (opcional)", embed: "Búsqueda por significado (más lenta)", add: "Añadir libro",
+    title: "Marcapáginas", tagline: "Tu compañero de lectura: pregunta sin que te cuenten lo que viene.", settings: "Ajustes de IA", library: "Mi biblioteca",
+    noBooks: "Aún no has añadido ningún libro.", addBook: "Añadir un libro", file: "Elige tu libro (EPUB o texto) o los subtítulos de tu serie (.srt)",
+    bookTitle: "Título (opcional)", embed: "Búsqueda por significado (más lenta)", add: "Añadir a mi biblioteca",
     embedOn: "Se calcula una sola vez; una novela tarda unos minutos.",
     embedOff: "No disponible: instala fastembed (pip install fastembed).",
     welcomeTitle: "Pregunta sobre lo que has leído, sin que te destripen lo que viene",
@@ -227,7 +354,7 @@ const TEXT = {
     noMatch: "No encuentro esa frase; prueba con otra más larga o exacta.",
     refusedMode: "No respondida: depende de lo que viene después", llmMode: "Respuesta de IA", passagesMode: "Fragmentos (sin IA configurada)",
     agentMode: "Respuesta de IA con herramientas", sources: "Pasajes usados", tools: "Búsquedas del agente", thinking: "Pensando…",
-    llmOk: "IA: lista", llmNone: "Sin IA: se muestran fragmentos", llmIntro: "Cada usuario usa su propia clave. Se guarda solo en este equipo y nunca se sube a ningún sitio.",
+    llmOk: "IA: lista", llmNone: "Sin IA: se muestran fragmentos", llmIntro: "Esto es opcional. Con una clave de IA, las respuestas se escriben con frases. Sin clave, verás los trozos del libro que responden a tu pregunta. La clave se guarda solo en este ordenador.",
     llmSettings: "Ajustes de IA", provider: "Proveedor", apiKey: "Clave de API", baseUrl: "Dirección del servidor (solo Ollama/otro)",
     model: "Modelo (opcional)", listModels: "Ver modelos", save: "Guardar", remove: "Quitar clave", close: "Cerrar",
     storageNote: "La clave se guarda en el almacén del sistema si tienes keyring; si no, en un archivo de tu carpeta de usuario sin cifrar.",
@@ -238,6 +365,31 @@ const TEXT = {
     finishedEpisode: "He terminado el episodio…", atEpisode: "…o estoy en el episodio, en el minuto", clockPh: "12:30",
     setTime: "Fijar", episodeWord: "Episodio ", episodes: " episodios",
     videoNote: "Película o serie: sube un .srt/.vtt por episodio.", badClock: "Escribe el minuto como 12:30 o 1:02:03.",
+    stepBook: "Libro", stepPlace: "Dónde vas", stepAsk: "Pregunta",
+    g1Title: "Paso 1 de 3 · Añade tu libro",
+    g1Text: "En el cuadro «Añadir un libro», pulsa «Elegir archivos» y escoge tu libro (un EPUB o un archivo de texto) o los subtítulos de tu serie o película (archivos .srt). Después pulsa el botón dorado «Añadir a mi biblioteca».",
+    g1bTitle: "Paso 1 de 3 · Elige un libro",
+    g1bText: "Pulsa el nombre de uno de tus libros en el cuadro «Mi biblioteca».",
+    g2Title: "Paso 2 de 3 · Dime hasta dónde has leído",
+    g2Text: "En el cuadro «¿Dónde vas?», abre la lista y elige el último capítulo que terminaste de leer. Así nunca te contaré nada de lo que viene después. ¿No recuerdas el número? Pega una frase que recuerdes y pulsa «Localizar».",
+    g2vTitle: "Paso 2 de 3 · Dime por dónde vas",
+    g2vText: "En el cuadro «¿Dónde vas?», elige el episodio en el que estás, escribe el minuto en el que te has quedado (por ejemplo 12:30) y pulsa «Fijar». Si ya terminaste un episodio entero, elígelo en la primera lista.",
+    g3Title: "Paso 3 de 3 · Haz tu pregunta",
+    g3Text: "Escribe tu pregunta en el cuadro de abajo y pulsa «Preguntar», o pulsa uno de los ejemplos. Solo te responderé con lo que ya has leído.",
+    g4Title: "¡Listo! Puedes seguir preguntando",
+    g4Text: "Pulsa un número como [3] dentro de la respuesta para ver el trozo del libro del que sale. Abre «Personajes hasta aquí» para ver quién es quién. Cuando sigas leyendo, vuelve a «¿Dónde vas?» y cambia el capítulo.",
+    tryExample: "Prueba con un ejemplo:", exRecap: "¿Qué ha pasado hasta ahora?",
+    llmNoteText: "Ahora mismo te enseño los trozos del libro que responden a tu pregunta. Si prefieres respuestas escritas con frases, activa la IA (es opcional, y gratis con Gemini).",
+    openAiSettings: "Activar la IA", openHelp: "Ayuda", showAll: "Ver los ", showFewer: "Ver menos",
+    helpTitle: "Cómo funciona",
+    helpP1: "Esta herramienta responde preguntas sobre un libro, una serie o una película usando solo lo que ya has leído o visto. Así no te cuenta nada de lo que viene después.",
+    helpP2: "Tres pasos: 1) añade tu libro o tus subtítulos; 2) dime hasta dónde has llegado; 3) pregunta lo que quieras.",
+    helpP3: "Todo se guarda en este ordenador. Solo si activas la IA, los pocos trozos del libro que responden a tu pregunta se envían al servicio de IA que elijas.",
+    helpP4: "Si una respuesta dice «no está establecido», significa que eso todavía no ha pasado en lo que llevas leído. Es la herramienta funcionando bien.",
+    howtoTitle: "Cómo conseguir una clave gratis:", advanced: "Opciones avanzadas (normalmente no hace falta tocarlas)",
+    howto1: "Entra en aistudio.google.com/apikey con tu cuenta personal de Google.",
+    howto2: "Pulsa «Create API key» y copia la clave que te da.",
+    howto3: "Pégala aquí abajo, en «Clave de API», y pulsa «Guardar».",
     peopleTitle: "Personajes hasta aquí", peopleHint: "Solo nombres y datos de lo que ya has leído.",
     noPeople: "Todavía no hay nombres suficientes hasta tu posición.", kindCharacter: "personaje", kindOther: "lugar u otro",
     mentionsLabel: "menciones", inChapters: "en los capítulos", firstSeen: "Primera vez", describedAs: "Descrito así",
@@ -247,9 +399,9 @@ const TEXT = {
     adding: "Procesando…", added: "Añadido: ", embedding: "Calculando vectores… ", error: "Error: ", askFirst: "Escribe una pregunta.",
   },
   en: {
-    title: "Spoiler-free reading companion", settings: "AI settings", library: "My library",
-    noBooks: "You haven't added a book yet.", addBook: "Add a book", file: "Files (.epub, .txt or subtitles .srt/.vtt)",
-    bookTitle: "Title (optional)", embed: "Search by meaning (slower)", add: "Add book",
+    title: "Bookmark", tagline: "Your reading companion: ask without being told what comes next.", settings: "AI settings", library: "My library",
+    noBooks: "You haven't added a book yet.", addBook: "Add a book", file: "Choose your book (EPUB or text) or your series subtitles (.srt)",
+    bookTitle: "Title (optional)", embed: "Search by meaning (slower)", add: "Add to my library",
     embedOn: "Computed once; a novel takes a few minutes.", embedOff: "Not available: install fastembed (pip install fastembed).",
     welcomeTitle: "Ask about what you've read, without being spoiled",
     welcome: "Everything is processed on your computer. Only text before your position is used.",
@@ -263,7 +415,7 @@ const TEXT = {
     noMatch: "I can't find that line; try a longer or more exact one.",
     refusedMode: "Not answered: it depends on what comes later", llmMode: "AI answer", passagesMode: "Passages (no AI configured)",
     agentMode: "AI answer with tools", sources: "Passages used", tools: "Agent searches", thinking: "Thinking…",
-    llmOk: "AI ready", llmNone: "No AI: showing passages", llmIntro: "Each user brings their own key. It is stored only on this computer and never uploaded.",
+    llmOk: "AI ready", llmNone: "No AI: showing passages", llmIntro: "This is optional. With an AI key, answers are written in sentences. Without one, you see the pieces of the book that answer your question. The key is stored only on this computer.",
     llmSettings: "AI settings", provider: "Provider", apiKey: "API key", baseUrl: "Server address (Ollama/other only)",
     model: "Model (optional)", listModels: "List models", save: "Save", remove: "Remove key", close: "Close",
     storageNote: "The key goes to the system credential store if keyring is installed; otherwise to an unencrypted file in your home folder.",
@@ -274,6 +426,31 @@ const TEXT = {
     finishedEpisode: "I have finished episode…", atEpisode: "…or I am in episode, at minute", clockPh: "12:30",
     setTime: "Set", episodeWord: "Episode ", episodes: " episodes",
     videoNote: "Film or series: upload one .srt/.vtt per episode.", badClock: "Type the minute as 12:30 or 1:02:03.",
+    stepBook: "Book", stepPlace: "Where you are", stepAsk: "Ask",
+    g1Title: "Step 1 of 3 · Add your book",
+    g1Text: "In the «Add a book» box, press «Choose files» and pick your book (an EPUB or a text file) or your series or film subtitles (.srt files). Then press the golden «Add to my library» button.",
+    g1bTitle: "Step 1 of 3 · Pick a book",
+    g1bText: "Press the name of one of your books in the «My library» box.",
+    g2Title: "Step 2 of 3 · Tell me how far you have read",
+    g2Text: "In the «Where are you?» box, open the list and pick the last chapter you finished. That way I will never tell you anything from after that point. Can't remember the number? Paste a line you remember and press «Locate».",
+    g2vTitle: "Step 2 of 3 · Tell me where you are",
+    g2vText: "In the «Where are you?» box, pick the episode you are in, type the minute where you stopped (for example 12:30) and press «Set». If you finished a whole episode, pick it in the first list.",
+    g3Title: "Step 3 of 3 · Ask your question",
+    g3Text: "Type your question in the box below and press «Ask», or press one of the examples. I will only answer with what you have already read.",
+    g4Title: "Done! You can keep asking",
+    g4Text: "Press a number like [3] inside the answer to see the piece of the book it comes from. Open «Characters so far» to see who is who. When you read on, come back to «Where are you?» and change the chapter.",
+    tryExample: "Try an example:", exRecap: "What has happened so far?",
+    llmNoteText: "Right now I show you the pieces of the book that answer your question. If you prefer answers written in sentences, turn on the AI (optional, and free with Gemini).",
+    openAiSettings: "Turn on the AI", openHelp: "Help", showAll: "Show all ", showFewer: "Show fewer",
+    helpTitle: "How it works",
+    helpP1: "This tool answers questions about a book, a series or a film using only what you have already read or watched, so it never tells you what comes next.",
+    helpP2: "Three steps: 1) add your book or subtitles; 2) tell me how far you have got; 3) ask anything.",
+    helpP3: "Everything is stored on this computer. Only if you turn on the AI, the few pieces of the book that answer your question are sent to the AI service you choose.",
+    helpP4: "If an answer says «not established», it means that has not happened yet in what you have read. That is the tool working correctly.",
+    howtoTitle: "How to get a free key:", advanced: "Advanced options (you normally do not need these)",
+    howto1: "Go to aistudio.google.com/apikey with your personal Google account.",
+    howto2: "Press «Create API key» and copy the key it gives you.",
+    howto3: "Paste it below, in «API key», and press «Save».",
     peopleTitle: "Characters so far", peopleHint: "Only names and facts from what you have already read.",
     noPeople: "Not enough names yet up to your position.", kindCharacter: "character", kindOther: "place or other",
     mentionsLabel: "mentions", inChapters: "in chapters", firstSeen: "First seen", describedAs: "Described as",
@@ -300,6 +477,7 @@ let chapters = [];       // [{number, title}] of the selected book
 
 function applyText() {
   document.documentElement.lang = LANG;
+  document.title = t("title") + " · " + t("tagline");
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
 }
@@ -327,6 +505,8 @@ function describePosition() {
     const c = chapters.find((x) => x.number === pos.chapter);
     box.append(t("finished") + pos.chapter + (c ? ". " + c.title : ""));
   }
+  updateGuide();
+  loadExamples();
   if ($("people").open) refreshPeople();
 }
 
@@ -368,6 +548,7 @@ function renderLlm() {
   badge.textContent = ok ? t("llmOk") : t("llmNone");
   badge.className = "badge " + (ok ? "ok" : "warn");
   $("agentWrap").hidden = !ok;
+  $("llmNote").hidden = ok;
   $("embed").disabled = !state.embeddings_available;
   $("embedHelp").textContent = state.embeddings_available ? t("embedOn") : t("embedOff");
 }
@@ -381,6 +562,7 @@ async function refresh() {
   $("empty").hidden = current != null;
   $("bookView").hidden = current == null;
   if (current) await loadChapters();
+  updateGuide();
 }
 
 async function loadChapters() {
@@ -581,6 +763,7 @@ function showAnswer(question, data) {
     card.append(details);
   }
   $("answers").prepend(card);
+  updateGuide();
 }
 
 async function run(kind) {
@@ -605,6 +788,65 @@ $("question").addEventListener("keydown", (event) => { if (event.key === "Enter"
 
 // ---- characters -------------------------------------------------------------------------------------------------
 let activeName = null;
+let showAllPeople = false;
+const PEOPLE_SHOWN = 12;
+
+// ---- step-by-step guide -----------------------------------------------------------------------------------------
+function hasPosition() {
+  const pos = getPos(current);
+  return pos.ordinal != null || pos.episode != null || (pos.chapter || 0) > 0;
+}
+
+let lastGuide = null;
+
+function updateGuide() {
+  const books = state.books || [];
+  const video = current && (books.find((b) => b.title === current) || {}).kind === "video";
+  let step, key, target;
+  if (!books.length) { step = 1; key = "g1"; target = "addCard"; }
+  else if (!current) { step = 1; key = "g1b"; target = "libCard"; }
+  else if (!hasPosition()) { step = 2; key = video ? "g2v" : "g2"; target = "posCard"; }
+  else if (!$("answers").children.length) { step = 3; key = "g3"; target = "askCard"; }
+  else { step = 4; key = "g4"; target = null; }
+  document.body.classList.toggle("choosing", !current);
+  $("guideTitle").textContent = t(key + "Title");
+  $("guideText").textContent = t(key + "Text");
+  [...$("steps").children].forEach((item, index) => {
+    const number = index + 1;
+    item.className = number < step ? "done" : number === step ? "current" : "";
+    item.querySelector(".n").textContent = number < step ? "✓" : String(number);
+  });
+  for (const id of ["addCard", "libCard", "posCard", "askCard"]) $(id).classList.toggle("focus", id === target);
+  // When the next step changes, bring its box into view so nobody has to hunt for it (not on first load).
+  if (target && lastGuide !== null && lastGuide !== key && !$(target).hidden) {
+    const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    $(target).scrollIntoView({ block: "center", behavior: calm ? "auto" : "smooth" });
+  }
+  lastGuide = key;
+}
+
+async function loadExamples() {
+  const box = $("examples");
+  if (!current || !hasPosition()) { $("examplesBox").hidden = true; return; }
+  let people = [];
+  try { people = (await post("/api/characters", positionBody())).filter((p) => p.kind === "character").slice(0, 3); } catch { people = []; }
+  box.textContent = "";
+  const recap = document.createElement("button");
+  recap.type = "button";
+  recap.className = "chip other";
+  recap.textContent = t("exRecap");
+  recap.addEventListener("click", () => run("recap"));
+  box.append(recap);
+  for (const person of people) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip other";
+    chip.textContent = t("whoIs") + person.name + "?";
+    chip.addEventListener("click", () => { $("question").value = t("whoIs") + person.name + "?"; run("ask"); });
+    box.append(chip);
+  }
+  $("examplesBox").hidden = false;
+}
 
 async function refreshPeople() {
   if (!current) return;
@@ -614,7 +856,7 @@ async function refreshPeople() {
     const people = await post("/api/characters", positionBody());
     chips.textContent = "";
     $("peopleMsg").textContent = people.length ? "" : t("noPeople");
-    for (const person of people) {
+    for (const person of (showAllPeople ? people : people.slice(0, PEOPLE_SHOWN))) {
       const chip = document.createElement("button");
       chip.type = "button";
       chip.className = "chip " + (person.kind === "character" ? "" : "other") + (person.name === activeName ? " active" : "");
@@ -625,6 +867,14 @@ async function refreshPeople() {
       chip.append(count);
       chip.addEventListener("click", () => showCard(person.name));
       chips.append(chip);
+    }
+    if (people.length > PEOPLE_SHOWN) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "link";
+      more.textContent = showAllPeople ? t("showFewer") : t("showAll") + people.length;
+      more.addEventListener("click", () => { showAllPeople = !showAllPeople; refreshPeople(); });
+      chips.append(more);
     }
     if (activeName) await showCard(activeName, true);
   } catch (error) {
@@ -720,6 +970,9 @@ $("openSettings").addEventListener("click", () => {
   $("settings").showModal();
 });
 $("closeSettings").addEventListener("click", () => $("settings").close());
+$("openAi").addEventListener("click", () => $("openSettings").click());
+$("openHelp").addEventListener("click", () => $("helpDialog").showModal());
+$("closeHelp").addEventListener("click", () => $("helpDialog").close());
 $("setForm").addEventListener("submit", (event) => event.preventDefault());
 $("apiKey").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); $("saveKey").click(); } });
 $("saveKey").addEventListener("click", async () => {
@@ -748,6 +1001,23 @@ $("listModels").addEventListener("click", async () => {
   } catch (error) { $("setMsg").textContent = t("error") + error.message; }
 });
 
+function markLanguage() {
+  for (const button of document.querySelectorAll(".lang button")) button.setAttribute("aria-pressed", String(button.dataset.lang === LANG));
+}
+
+for (const button of document.querySelectorAll(".lang button")) {
+  button.addEventListener("click", async () => {
+    if (button.dataset.lang === LANG) return;
+    LANG = button.dataset.lang;
+    localStorage.setItem("lang", LANG);
+    applyText();
+    markLanguage();
+    keyHelp();
+    await refresh();  // redraws the library, the position box, the guide, the examples and the character list
+  });
+}
+
+markLanguage();
 applyText();
 refresh().catch((error) => { $("noBooks").hidden = false; $("noBooks").textContent = t("error") + error.message; });
 </script>
