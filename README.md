@@ -78,7 +78,7 @@ Read with care: the "other form" variants are real forms found elsewhere in the 
 
 ### Web interface
 
-The page is called Bookmark (Marcapáginas in Spanish). It explains itself: a banner at the top shows which of three steps you are on (book, where you are, ask) and says in plain words what to press, while the matching box glows gold and scrolls into view. Questions you can ask with one click appear under the question box (a recap, and "Who is ...?" for characters you have already met), a Help button explains how it works, and the AI settings explain how to get a free key step by step. A fixed ES | EN switch in the top-right corner changes the whole interface between Spanish and English at any time and remembers your choice; by default it follows your browser. Dark and light themes follow your system.
+The page is called SPOILER-FREE COMPANION in both languages, in large capitals. It explains itself: a banner at the top shows which of three steps you are on (book, where you are, ask) and says in plain words what to press, while the matching box glows gold and scrolls into view. Questions you can ask with one click appear under the question box (a recap, and "Who is ...?" for characters you have already met), a Help button explains how it works, and the AI settings explain how to get a free key step by step. A fixed ES | EN switch in the top-right corner changes the whole interface between Spanish and English at any time and remembers your choice; by default it follows your browser. Dark and light themes follow your system.
 
 ```sh
 python -m companion serve          # opens your browser; --port N to change the port, --no-open to skip the browser

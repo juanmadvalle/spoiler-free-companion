@@ -53,8 +53,30 @@ class PageTests(unittest.TestCase):
     def test_the_brand_is_centred_and_named(self):
         self.assertIn('class="brand"', self.html)
         self.assertRegex(self.html, r"header\.top \{[^}]*text-align: center")
-        self.assertIn('title: "Marcapáginas"', self.html)
-        self.assertIn('title: "Bookmark"', self.html)
+        # the same name in both languages, shown large in capitals, and no bookmark symbol
+        self.assertEqual(self.html.count('title: "Spoiler-free companion"'), 2)
+        self.assertRegex(self.html, r"\.brand h1 \{[^}]*text-transform: uppercase")
+        self.assertNotIn("Marcapáginas", self.html)
+        self.assertNotIn("Bookmark", self.html)
+        self.assertNotIn('class="mark"', self.html)
+
+    def test_no_text_is_left_unused_and_nothing_is_said_twice(self):
+        code = self.script[: self.script.index("  es: {")] + self.script[self.script.index("\n  },", self.script.index("  en: {")):]
+        dynamic = {step + part for step in ("g1", "g1b", "g2", "g2v", "g3", "g4") for part in ("Title", "Text")}
+        for key in sorted(self.texts["es"]):
+            used = (f'data-i18n="{key}"' in self.html or f'data-i18n-ph="{key}"' in self.html or f'"{key}"' in code
+                    or key in dynamic)
+            self.assertTrue(used, f"text '{key}' is defined but never shown")
+        # the promise and the steps are stated once each: in the guide, not again in a welcome card
+        for repeated in ('id="empty"', "welcomeTitle", "peopleHint"):
+            self.assertNotIn(repeated, self.html)
+        for language in ("es", "en"):  # the step stepper already shows the number, so titles do not say "Step N of 3"
+            for key in ("g1Title", "g1bTitle", "g2Title", "g2vTitle", "g3Title"):
+                self.assertNotRegex(self.text_value(language, key), r"(Paso|Step) \d")
+
+    def text_value(self, language, key):
+        block = self.script[self.script.index(f"  {language}: {{"):]
+        return re.search(key + r':\s*"([^"]*)"', block).group(1)
 
 
 if __name__ == "__main__":
