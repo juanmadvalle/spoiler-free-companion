@@ -10,15 +10,16 @@ from .agent import Session, run_agent
 from .answer import ask, recap
 from .embed import default_embedder, default_reranker
 from .ingest import read_book, read_subtitles
+from .paths import default_db
 from .subtitles import parse_clock
 from .store import Library
 
-DEFAULT_DB = Path.home() / ".spoiler-free-companion.db"
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="companion", description="Context for what you've read, without spoilers.")
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB, help=f"Library file (default {DEFAULT_DB})")
+    parser.add_argument("--db", type=Path, default=None,
+                        help="Library file (default: .spoiler-free-companion.db in COMPANION_HOME, or in your user folder)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     add = sub.add_parser("ingest", help="Add an EPUB or .txt you own, or subtitle files (.srt/.vtt), one per episode")
@@ -62,8 +63,9 @@ def main(argv=None) -> int:
             command.add_argument("--verbose", action="store_true", help="With --agent: print each tool call")
 
     args = parser.parse_args(argv)
-    if args.command == "key":
+    if args.command == "key":  # the saved key does not need a library
         return _key(args)
+    args.db = args.db or default_db()
     if args.command == "serve":
         from .web import serve
 

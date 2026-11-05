@@ -88,6 +88,16 @@ A single page where you add a book (EPUB or text), say how far you have read (a 
 
 Because it handles your key, the server is locked down: it listens on `127.0.0.1` only, the link it prints contains a one-time token that every request must carry, requests with a foreign `Host` header (DNS rebinding) or non-JSON bodies (cross-site form posts) are refused, uploads and JSON bodies have size limits, the page is served with a strict Content-Security-Policy (no external resources, no inline handlers), the uploaded file name is never used as a path, and the key is never sent back to the page (only a masked form). Chapter numbers beyond the end of a book are rejected instead of marking the whole book as read.
 
+### Where your data lives
+
+By default the program keeps three things under your user folder: the library (`.spoiler-free-companion.db`), the saved key and settings (`.spoiler-free-companion/config.json`) and the downloaded models (`.cache/spoiler-free-companion/models`). Set `COMPANION_HOME` to keep them in another folder instead, for example `C:\dev\personal`; the same names are used under it. Models already downloaded under your user folder are reused until you move them.
+
+```powershell
+setx COMPANION_HOME "C:\dev\personal"     # once; open a new terminal afterwards
+```
+
+A more specific setting always wins: `--db` for the library, `COMPANION_CONFIG` for the settings file and `COMPANION_MODEL_DIR` for the models. The web page and the command line both follow the same rules, so move your data first and then set the variable. The tests never touch your real data: they run with a temporary home.
+
 ### Choosing an LLM
 
 Every user brings their own key; nothing is bundled and nothing is stored in the repository. The easiest way:
@@ -100,7 +110,7 @@ python -m companion key status                   # shows a masked key and where 
 python -m companion key clear
 ```
 
-The key is saved on your computer only: in the system credential store if the optional `keyring` package is installed (`pip install keyring`), otherwise in `~/.spoiler-free-companion/config.json` with owner-only permissions, which is plain text. Environment variables always win over the stored key:
+The key is saved on your computer only: in the system credential store if the optional `keyring` package is installed (`pip install keyring`), otherwise in `.spoiler-free-companion/config.json` under your user folder (or `COMPANION_HOME`) with owner-only permissions, which is plain text. Environment variables always win over the stored key:
 
 | Provider | Variables | Cost |
 |---|---|---|
@@ -119,7 +129,7 @@ The index stems words ("crying" finds "cried") and re-ranks the top candidates b
 
 ### Semantic search (optional, local, no API key)
 
-`pip install fastembed` (about 130 MB model, downloaded once to `~/.cache/spoiler-free-companion/models`), then:
+`pip install fastembed` (about 130 MB model, downloaded once to `.cache/spoiler-free-companion/models` under your user folder or `COMPANION_HOME`), then:
 
 ```sh
 python -m companion ingest mybook.epub --title "My Book" --embed

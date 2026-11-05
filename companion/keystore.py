@@ -12,12 +12,14 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
+from . import paths
+
 SERVICE = "spoiler-free-companion"
 PROVIDERS = ("gemini", "anthropic", "custom")
 
 
 def config_path() -> Path:
-    return Path(os.environ.get("COMPANION_CONFIG") or Path.home() / ".spoiler-free-companion" / "config.json")
+    return paths.config_file()
 
 
 @lru_cache(maxsize=1)

@@ -107,7 +107,7 @@ class KeystoreTests(unittest.TestCase):
             self.assertEqual(main(["key", "set", "--stdin"]), 1)
 
     def test_default_config_is_in_the_home_directory_not_the_repo(self):
-        with patch.dict(os.environ, {"COMPANION_CONFIG": "", "USERPROFILE": str(REAL_HOME), "HOME": str(REAL_HOME)}):
+        with patch.dict(os.environ, {"COMPANION_CONFIG": "", "COMPANION_HOME": "", "USERPROFILE": str(REAL_HOME), "HOME": str(REAL_HOME)}):
             path = keystore.config_path().resolve()
         self.assertTrue(path.is_relative_to(REAL_HOME.resolve()))
         self.assertFalse(path.is_relative_to(REPO))

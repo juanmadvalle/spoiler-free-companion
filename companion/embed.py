@@ -2,15 +2,15 @@
 vector never carries information from later text; the horizon is applied when vectors are loaded."""
 
 import os
-from pathlib import Path
 from typing import Protocol
+
+from .paths import model_cache
 
 DEFAULT_MODEL = os.environ.get("COMPANION_EMBED_MODEL", "BAAI/bge-small-en-v1.5")
 MULTILINGUAL_MODEL = os.environ.get("COMPANION_EMBED_MODEL_MULTILINGUAL",
                                     "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 RERANK_MODEL = os.environ.get("COMPANION_RERANK_MODEL", "Xenova/ms-marco-MiniLM-L-6-v2")
 BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
-CACHE_DIR = Path(os.environ.get("COMPANION_MODEL_DIR", Path.home() / ".cache" / "spoiler-free-companion" / "models"))
 
 
 class Embedder(Protocol):
@@ -38,8 +38,9 @@ class FastEmbedder:
         if self._model is None:  # loaded on first use: startup stays fast when no semantic search is needed
             from fastembed import TextEmbedding
 
-            CACHE_DIR.mkdir(parents=True, exist_ok=True)
-            self._model = TextEmbedding(self.name, cache_dir=str(CACHE_DIR))
+            cache = model_cache()
+            cache.mkdir(parents=True, exist_ok=True)
+            self._model = TextEmbedding(self.name, cache_dir=str(cache))
         vectors = np.array(list(self._model.embed(texts)), dtype=np.float32)
         return vectors / np.maximum(np.linalg.norm(vectors, axis=1, keepdims=True), 1e-12)
 
@@ -61,8 +62,9 @@ class FastReranker:
         if self._model is None:
             from fastembed.rerank.cross_encoder import TextCrossEncoder
 
-            CACHE_DIR.mkdir(parents=True, exist_ok=True)
-            self._model = TextCrossEncoder(self.name, cache_dir=str(CACHE_DIR))
+            cache = model_cache()
+            cache.mkdir(parents=True, exist_ok=True)
+            self._model = TextCrossEncoder(self.name, cache_dir=str(cache))
         return [float(score) for score in self._model.rerank(query, texts)]
 
 

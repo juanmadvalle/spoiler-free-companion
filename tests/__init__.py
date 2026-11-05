@@ -8,5 +8,6 @@ import tempfile
 
 os.environ["COMPANION_CONFIG"] = os.path.join(tempfile.gettempdir(), "companion-tests-no-config", "config.json")
 os.environ["COMPANION_NO_KEYRING"] = "1"
+os.environ["COMPANION_HOME"] = os.path.join(tempfile.gettempdir(), "companion-tests-home")  # never the real data folder
 for name in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "COMPANION_LLM_API_KEY", "COMPANION_LLM_BASE_URL"):
     os.environ.pop(name, None)
