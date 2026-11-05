@@ -152,6 +152,30 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class HeadingTests(unittest.TestCase):
+    FILLER = " ".join(["The morning was cold and the wind blew hard over the fields of wheat and barley."] * 4)
+
+    def chapters(self, *blocks):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "b.txt"
+            path.write_text("\n\n".join(blocks) + "\n", encoding="utf-8")
+            return [c.title for c in read_book(path)]
+
+    def test_short_paragraphs_starting_with_heading_words_do_not_split_chapters(self):
+        f = self.FILLER
+        titles = self.chapters("Chapter 1", f, "Book learning was never his strength.", f, "Part of the road was blocked.",
+                               f, "Parte del camino era llano.", f, "Part I played was small.", f, "Libro de cuentas.", f)
+        self.assertEqual(titles, ["Chapter 1"])
+
+    def test_real_numbering_styles_are_still_headings(self):
+        f = self.FILLER
+        heads = ["Chapter 2", "CHAPTER III.", "Chapter IV. The Long Road", "Book One", "BOOK TWO: The Return",
+                 "Part 3", "Part Four", "Chapter Twenty-One", "Capítulo primero. Que trata de todo",
+                 "Capítulo XL", "Tratado Séptimo", "Parte segunda", "Libro 5", "Chapter I."]
+        titles = self.chapters(*[x for h in heads for x in (h, f)])
+        self.assertEqual(titles, heads)
+
+
 class ChunkTests(unittest.TestCase):
     def test_long_paragraphs_split_at_sentence_ends_within_the_limit(self):
         from companion.ingest import chunk

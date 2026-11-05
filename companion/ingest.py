@@ -81,10 +81,23 @@ def read_epub(path: Path) -> list[Chapter]:
     return chapters
 
 
+# A heading word must be followed by a real number (digits, number word or Roman numeral), otherwise an ordinary
+# short paragraph such as "Part of the road was blocked." or "Book learning was never his strength." would split the
+# chapter. A Roman numeral also needs punctuation or the end of the line after it, so the pronoun in "Part I played"
+# is not read as the numeral I.
+_NUMBER_WORDS = (
+    r"one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen"
+    r"|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|first|second|third|fourth"
+    r"|fifth|sixth|seventh|eighth|ninth|tenth|last"
+    r"|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|veinte|treinta"
+    r"|cuarenta|cincuenta|primer[oa]?|segund[oa]|tercer[oa]|cuart[oa]|quint[oa]|sext[oa]|s[eé]ptim[oa]|octav[oa]"
+    r"|noven[oa]|d[eé]cim[oa]|[uú]ltim[oa]")
+_NUM = (r"(?:\d+|(?i:(?:" + _NUMBER_WORDS + r")(?:-(?:one|two|three|four|five|six|seven|eight|nine))?)\b"
+        r"|[IVXLCDM]+(?=\s*[.:)\]\-—–]|\s*$))")
 _HEADING = re.compile(
     r"^\s*(?:(?:CHAPTER|Chapter|ADVENTURE|Adventure|BOOK|Book|PART|Part"
     r"|CAP[IÍ]TULO|Cap[ií]tulo|CAPITULO|Capitulo|TRATADO|Tratado|LIBRO|Libro|PARTE|Parte"
-    r"|AVENTURA|Aventura|ACTO|Acto|JORNADA|Jornada)\s+[\w.\-]+.*"
+    r"|AVENTURA|Aventura|ACTO|Acto|JORNADA|Jornada)\s+" + _NUM + r".*"
     # "Letter 1" / "Carta 2" are chapters; "Carta de don Quijote a Dulcinea" is a letter inside one.
     r"|(?:LETTER|Letter|CARTA|Carta)\s+(?:[IVXLC]+\b|\d+\b|[Pp]rimera\b|[Ss]egunda\b|[Tt]ercera\b).*"
     r"|(?:PREFACE|Preface|INTRODUCTION|Introduction|FOREWORD|Foreword|AFTERWORD|Afterword|CONTENTS|Contents"

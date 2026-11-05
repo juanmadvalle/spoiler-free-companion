@@ -84,6 +84,33 @@ class WebTests(WebCase):
         self.assertEqual(self.api("GET", "/api/state")[0], 200)
         self.assertEqual(self.api("GET", "/api/state", host=f"localhost:{self.port}")[0], 200)
 
+    def test_non_ascii_tokens_get_a_403_instead_of_crashing_the_handler(self):
+        for token in ("é", "café-token", "☃"):
+            connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+            connection.putrequest("GET", "/api/state", skip_host=True)
+            connection.putheader("Host", f"127.0.0.1:{self.port}")
+            connection.putheader("X-Token", token.encode("latin-1", "replace").decode("latin-1"))
+            connection.endheaders()
+            self.assertEqual(connection.getresponse().status, 403, token)
+            connection.close()
+        for query in ("%C3%A9", "t%C3%A9", "%E2%98%83"):
+            status, _, _ = self.call("GET", f"/?t={query}", token=None)
+            self.assertEqual(status, 403, query)
+        self.assertEqual(self.api("GET", "/api/state")[0], 200)  # the server is still alive
+
+    def test_negative_or_invalid_content_length_is_rejected_without_hanging(self):
+        for value in ("-1", "-100", "abc"):
+            connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+            connection.putrequest("POST", "/api/ask", skip_host=True)
+            connection.putheader("Host", f"127.0.0.1:{self.port}")
+            connection.putheader("X-Token", TOKEN)
+            connection.putheader("Content-Type", "application/json")
+            connection.putheader("Content-Length", value)
+            connection.endheaders()
+            self.assertEqual(connection.getresponse().status, 400, value)  # a timeout here would mean it hangs
+            connection.close()
+        self.assertEqual(self.api("GET", "/api/state")[0], 200)
+
     def test_cross_site_style_posts_are_refused(self):
         status, _ = self.api("POST", "/api/ask", raw=b"title=S&question=x", content_type="application/x-www-form-urlencoded")
         self.assertEqual(status, 415)

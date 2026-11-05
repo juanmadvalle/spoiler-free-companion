@@ -252,11 +252,18 @@ def make_handler(app: App, port_getter):
             port = port_getter()
             return self.headers.get("Host", "") in (f"127.0.0.1:{port}", f"localhost:{port}")
 
+        @staticmethod
+        def _token_matches(value: str) -> bool:
+            """Constant-time comparison on bytes: compare_digest raises on non-ASCII str, and a client controls this."""
+            return hmac.compare_digest(value.encode("utf-8", "replace"), app.token.encode("utf-8"))
+
         def _authorised(self) -> bool:
-            return hmac.compare_digest(self.headers.get("X-Token", ""), app.token)
+            return self._token_matches(self.headers.get("X-Token", ""))
 
         def _body(self, limit: int) -> bytes:
             length = int(self.headers.get("Content-Length") or 0)
+            if length < 0:  # rfile.read(-1) would wait for the client to close the connection
+                raise ValueError("Invalid Content-Length")
             if length > limit:
                 raise ValueError("Request too large")
             return self.rfile.read(length)
@@ -273,7 +280,7 @@ def make_handler(app: App, port_getter):
                 return
             url = urlparse(self.path)
             if url.path == "/":
-                if not hmac.compare_digest(parse_qs(url.query).get("t", [""])[0], app.token):
+                if not self._token_matches(parse_qs(url.query).get("t", [""])[0]):
                     return self._send(403, "Open the link printed in the terminal (it contains a one-time token)."
                                       .encode(), "text/plain; charset=utf-8")
                 nonce = secrets.token_urlsafe(12)
