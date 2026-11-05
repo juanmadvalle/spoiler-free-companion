@@ -28,6 +28,23 @@ python -m companion recap "My Book" --phrase "a line I just read"
 python -m unittest discover -s tests -t .
 ```
 
+### Films and series (subtitles)
+
+Bring your own subtitle files (`.srt` or `.vtt`); none are bundled, and they are processed on your computer. One file is one episode (or the whole film):
+
+```sh
+python -m companion ingest "Show.S01E01.srt" "Show.S01E02.srt" "Show.S01E03.srt" --title "My Show"   # episodes in natural order
+python -m companion ask "My Show" "Who is the man in the grey coat?" --episode 2 --at 31:30            # I am 31:30 into episode 2
+python -m companion ask "My Show" "What happened so far?" --chapter 1                                  # I have finished episode 1
+python -m companion characters "My Show" --episode 2 --at 31:30
+```
+
+In the web page, choose several subtitle files at once; a book list entry then shows episodes, and the position box gains "I am in episode N, at minute M". Answers and cards cite the episode and the minute (`S01E02 · 1:00`). Everything else (search, character cards, the agent, Spanish or English) works as for books.
+
+How the minute is applied: subtitle lines are grouped into short passages (at most about 400 characters, 60 seconds, split at silences of 12 seconds or more), and you have "seen" a passage only once it has **fully ended** by your minute. A passage still being spoken at that minute is not included, so you never get a line you have not heard. Locating by a remembered line likewise stops one passage before the one that contains it. This costs a few seconds of context and guarantees the rule. Hearing-impaired captions such as `[door slams]` stay in the text; promotional lines ("Subtitles by …") are dropped; Windows/Latin-1 encodings are handled. Season/episode labels come from the file name (`S01E02`, `2x03`), otherwise from the cleaned name.
+
+Tested with synthetic series and a large check that turns *Sherlock Holmes* into 12 episodes of generated subtitles: at 8 episode-and-minute positions no search, recap, character list or card contains a word that is only said later, and deliberately counting passages that merely *start* before the minute makes the same check fail. Not tested: real subtitle files (none can be bundled), word-level timing inside a passage, and video files themselves; you give the position by hand (a media player's current time), the tool does not watch the video.
+
 ### Character cards
 
 `python -m companion characters "My Book" --chapter 5` lists the names met so far and `card "My Book" Holmes --chapter 5` shows what is known about one: other names it goes by (Sherlock Holmes → Holmes), first and last appearance with passage numbers, sentences that say who they are ("X was a ...", "X, the ..."), and who they appear with. In the web page it is the "Characters so far" section; clicking a name opens its card, and one more click asks the AI who they are. The agent has a `character_card(name)` tool.

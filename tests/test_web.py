@@ -16,7 +16,9 @@ from tests.test_keystore import SECRET as FAKE_KEY  # the one deliberately fake 
 TOKEN = "test-token-123"
 
 
-class WebTests(unittest.TestCase):
+class WebCase(unittest.TestCase):
+    """Server, token and isolated config shared by the web tests."""
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -54,6 +56,8 @@ class WebTests(unittest.TestCase):
         status, _, data = self.call(method, path, body, **kwargs)
         return status, json.loads(data)
 
+
+class WebTests(WebCase):
     # ---- access control -------------------------------------------------------------------------------------
     def test_server_listens_on_loopback_only(self):
         self.assertEqual(self.server.server_address[0], "127.0.0.1")

@@ -20,7 +20,9 @@ from .agent import Session, run_agent
 from .answer import ask, default_answerer, extractive, recap
 from .guard import REFUSAL, REFUSAL_ES
 from .embed import default_embedder
-from .ingest import read_book
+from .ingest import Chapter, read_book
+from .subtitles import episode_title, natural_key, parse_clock, parse_cues
+from .subtitles import passages as passages_of
 from .store import Library
 
 PAGE = Path(__file__).parent / "static" / "index.html"
@@ -46,7 +48,8 @@ class App:
         library = self.library()
         try:
             books = [{"title": t, "chapters": len(library.chapters(t)), "semantic": library.has_vectors(t),
-                      "lang": library.lang_of(t)} for t in library.works()]
+                      "lang": library.lang_of(t), "kind": "video" if library.is_timed(t) else "book"}
+                     for t in library.works()]
         finally:
             library.close()
         config = llm.settings()
@@ -66,7 +69,10 @@ class App:
 
     @staticmethod
     def horizon(library: Library, title: str, body: dict) -> int:
-        """The reader's position: an exact passage ordinal (from a located phrase) or 'finished chapter N'."""
+        """The reader's position: an exact passage ordinal (from a located phrase), 'episode N at minute T', or
+        'finished chapter N'."""
+        if body.get("episode") is not None:
+            return library.horizon_at_time(title, int(body["episode"]), parse_clock(str(body.get("time", "0"))))
         if body.get("ordinal") is not None:
             ordinal = int(body["ordinal"])
             top = library.db.execute("SELECT MAX(ordinal) FROM chunks WHERE work_id = ?",
@@ -118,9 +124,10 @@ class App:
             else:
                 text, passages = ask(library, title, str(body["question"]), horizon, answerer)
             mode = "passages" if answerer is extractive else "llm"
+            when = library.times(title, [p.ordinal for p in passages])
             return {"answer": text, "mode": mode, "ordinal": horizon, "refused": text in (REFUSAL, REFUSAL_ES),
                     "passages": [{"ordinal": p.ordinal, "chapter": p.chapter, "chapter_title": p.chapter_title,
-                                  "text": p.text} for p in passages]}
+                                  "text": p.text, "start": when.get(p.ordinal, (None,))[0]} for p in passages]}
         finally:
             library.close()
 
@@ -147,6 +154,37 @@ class App:
         finally:
             library.close()
         result = {"title": title, "chapters": len(chapters), "passages": passages, "lang": language}
+        if embed and self.embedder is not None:
+            result["job"] = self._start_embedding(title)
+        return result
+
+    def ingest_subtitles(self, body: dict, embed: bool = False) -> dict:
+        """Several subtitle files (one per episode) as one title. Nothing is read from disk by file name."""
+        episodes = body.get("episodes")
+        if not isinstance(episodes, list) or not 1 <= len(episodes) <= 200:
+            raise ValueError("Send between 1 and 200 subtitle files")
+        files = []
+        for entry in episodes:
+            if not isinstance(entry, dict) or not isinstance(entry.get("text"), str) or not isinstance(entry.get("name"), str):
+                raise ValueError("Each episode needs a name and the subtitle text")
+            files.append((entry["name"][:200], entry["text"]))
+        if not body.get("keep_order"):
+            files.sort(key=lambda f: natural_key(f[0]))
+        chapters = []
+        for number, (name, text) in enumerate(files, 1):
+            grouped = passages_of(parse_cues(text))
+            if not grouped:
+                raise ValueError(f"No subtitle lines found in {name}")
+            chapters.append(Chapter(episode_title(name, number), [g[0] for g in grouped], [(g[1], g[2]) for g in grouped]))
+        title = str(body.get("title") or files[0][0]).strip()[:200] or "Untitled"
+        language = str(body.get("lang") or "") or None
+        library = self.library()
+        try:
+            count = library.add_work(title, chapters, language)
+            language = library.lang_of(title)
+        finally:
+            library.close()
+        result = {"title": title, "chapters": len(chapters), "passages": count, "lang": language, "kind": "video"}
         if embed and self.embedder is not None:
             result["job"] = self._start_embedding(title)
         return result
@@ -263,7 +301,8 @@ def make_handler(app: App, port_getter):
                     return self._dispatch("POST", url, data)
                 if not self.headers.get("Content-Type", "").startswith("application/json"):
                     return self._json(415, {"error": "JSON required"})  # also blocks simple cross-site form posts
-                body = json.loads(self._body(MAX_JSON) or b"{}")
+                limit = MAX_BOOK if url.path == "/api/ingest-subs" else MAX_JSON  # subtitle sets are larger than a question
+                body = json.loads(self._body(limit) or b"{}")
                 if not isinstance(body, dict):
                     raise ValueError("JSON object expected")
             except (ValueError, json.JSONDecodeError) as exc:
@@ -287,6 +326,8 @@ def make_handler(app: App, port_getter):
                 elif method == "POST" and path == "/api/ingest":
                     result = app.ingest(query.get("filename", ""), body, query.get("title", ""),
                                         query.get("embed") == "1", query.get("lang", ""))
+                elif method == "POST" and path == "/api/ingest-subs":
+                    result = app.ingest_subtitles(body, bool(body.get("embed")))
                 elif method == "POST" and path == "/api/characters":
                     result = app.characters(body)
                 elif method == "POST" and path == "/api/card":

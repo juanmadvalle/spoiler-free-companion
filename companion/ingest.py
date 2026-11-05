@@ -15,6 +15,7 @@ MIN_CHAPTER_CHARS = 200
 class Chapter:
     title: str
     paragraphs: list[str]
+    times: list[tuple[float, float]] | None = None  # (start, end) seconds per paragraph, for subtitles
 
 
 class _TextExtractor(HTMLParser):
@@ -139,13 +140,26 @@ def read_text(path: Path) -> list[Chapter]:
             and not (headed and t == FRONT_MATTER)]
 
 
+def read_subtitles(path: Path, title: str | None = None, number: int = 1) -> Chapter:
+    """One subtitle file as one timed chapter (an episode, or the whole film)."""
+    from . import subtitles
+
+    grouped = subtitles.passages(subtitles.parse_cues(subtitles.decode(path.read_bytes())))
+    if not grouped:
+        raise ValueError(f"No subtitle lines found in {path.name}")
+    return Chapter(title or subtitles.episode_title(path.name, number), [g[0] for g in grouped],
+                   [(g[1], g[2]) for g in grouped])
+
+
 def read_book(path: Path) -> list[Chapter]:
     suffix = path.suffix.lower()
     if suffix == ".epub":
         return read_epub(path)
     if suffix in (".txt", ".text"):
         return read_text(path)
-    raise ValueError(f"Unsupported format: {suffix} (use .epub or .txt)")
+    if suffix in (".srt", ".vtt"):
+        return [read_subtitles(path)]
+    raise ValueError(f"Unsupported format: {suffix} (use .epub, .txt, .srt or .vtt)")
 
 
 _SENTENCE = re.compile(r"""(?<=[.!?])["”’']?\s+""")

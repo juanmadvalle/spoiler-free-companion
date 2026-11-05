@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS works (id INTEGER PRIMARY KEY, title TEXT UNIQUE NOT 
 CREATE TABLE IF NOT EXISTS chunks (
     id INTEGER PRIMARY KEY, work_id INTEGER NOT NULL REFERENCES works(id),
     ordinal INTEGER NOT NULL, chapter INTEGER NOT NULL, chapter_title TEXT NOT NULL,
-    text TEXT NOT NULL, UNIQUE (work_id, ordinal));
+    text TEXT NOT NULL, start_s REAL, end_s REAL, UNIQUE (work_id, ordinal));
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     text, content='chunks', content_rowid='id', tokenize='porter unicode61 remove_diacritics 2');
 -- Languages other than English are indexed as pre-stemmed text (see lang.py), one row per passage.
@@ -54,6 +54,10 @@ class Library:
         if "lang" not in [row[1] for row in self.db.execute("PRAGMA table_info(works)")]:
             with self.db:  # libraries made before language support are all English
                 self.db.execute("ALTER TABLE works ADD COLUMN lang TEXT NOT NULL DEFAULT 'en'")
+        if "start_s" not in [row[1] for row in self.db.execute("PRAGMA table_info(chunks)")]:
+            with self.db:  # libraries made before subtitle support have no timestamps
+                self.db.execute("ALTER TABLE chunks ADD COLUMN start_s REAL")
+                self.db.execute("ALTER TABLE chunks ADD COLUMN end_s REAL")
         self._upgrade_fts()
 
     def _upgrade_fts(self) -> None:
@@ -73,18 +77,23 @@ class Library:
 
         The language ('en' or 'es') is detected from the text unless given.
         """
-        pieces = [(number, chapter.title, text) for number, chapter in enumerate(chapters, start=1)
-                  for text in chunk(chapter.paragraphs)]
-        language = language if language in langs.SUPPORTED else langs.detect(text for _, _, text in pieces)
+        pieces = []  # (chapter number, chapter title, text, start seconds, end seconds)
+        for number, chapter in enumerate(chapters, start=1):
+            if chapter.times is not None:  # subtitles arrive already grouped, each passage with its time span
+                pieces += [(number, chapter.title, text, start, end)
+                           for text, (start, end) in zip(chapter.paragraphs, chapter.times)]
+            else:
+                pieces += [(number, chapter.title, text, None, None) for text in chunk(chapter.paragraphs)]
+        language = language if language in langs.SUPPORTED else langs.detect(p[2] for p in pieces)
         with self.db:
             self._delete_work(title)
             work_id = self.db.execute("INSERT INTO works (title, lang) VALUES (?, ?)", (title, language)).lastrowid
             texts = []
-            for ordinal, (number, chapter_title, text) in enumerate(pieces, start=1):
+            for ordinal, (number, chapter_title, text, start, end) in enumerate(pieces, start=1):
                 texts.append((ordinal, text))
                 row = self.db.execute(
-                    "INSERT INTO chunks (work_id, ordinal, chapter, chapter_title, text) VALUES (?,?,?,?,?)",
-                    (work_id, ordinal, number, chapter_title, text)).lastrowid
+                    "INSERT INTO chunks (work_id, ordinal, chapter, chapter_title, text, start_s, end_s) "
+                    "VALUES (?,?,?,?,?,?,?)", (work_id, ordinal, number, chapter_title, text, start, end)).lastrowid
                 if language == "en":
                     self.db.execute("INSERT INTO chunks_fts (rowid, text) VALUES (?, ?)", (row, text))
                 else:
@@ -119,6 +128,38 @@ class Library:
         work_id = self._work(title)
         self._ensure_mentions(work_id)
         return cards.card(self.db, work_id, self.lang_of(title), name, horizon)
+
+    def is_timed(self, title: str) -> bool:
+        """True for films and series added from subtitles: positions can then be given as episode + minute."""
+        return self.db.execute("SELECT 1 FROM chunks WHERE work_id = ? AND start_s IS NOT NULL LIMIT 1",
+                               (self._work(title),)).fetchone() is not None
+
+    def times(self, title: str, ordinals: list[int]) -> dict[int, tuple[float, float]]:
+        """(start, end) seconds of timed passages; empty for books."""
+        if not ordinals:
+            return {}
+        marks = ",".join("?" * len(ordinals))
+        return {o: (a, b) for o, a, b in self.db.execute(
+            f"SELECT ordinal, start_s, end_s FROM chunks WHERE work_id = ? AND start_s IS NOT NULL AND ordinal IN ({marks})",
+            (self._work(title), *ordinals))}
+
+    def horizon_at_time(self, title: str, episode: int, seconds: float) -> int:
+        """Position 'in episode N at this minute': every passage that has fully ended by then, and earlier episodes.
+
+        A passage still being spoken at that minute is not counted, so nothing the viewer has not heard yet leaks.
+        """
+        work_id = self._work(title)
+        if not self.is_timed(title):
+            raise ValueError("This title has no timestamps; add subtitles (.srt/.vtt) to use minutes")
+        last = self.db.execute("SELECT MAX(chapter) FROM chunks WHERE work_id = ?", (work_id,)).fetchone()[0]
+        if not 1 <= episode <= last:
+            raise ValueError(f"Episode {episode} not found (this title has episodes 1-{last})")
+        within = self.db.execute("SELECT MAX(ordinal) FROM chunks WHERE work_id = ? AND chapter = ? AND end_s <= ?",
+                                 (work_id, episode, seconds)).fetchone()[0]
+        if within is not None:
+            return within
+        return self.db.execute("SELECT COALESCE(MAX(ordinal), 0) FROM chunks WHERE work_id = ? AND chapter < ?",
+                               (work_id, episode)).fetchone()[0]
 
     def lang_of(self, title: str) -> str:
         return self.db.execute("SELECT lang FROM works WHERE id = ?", (self._work(title),)).fetchone()[0]
@@ -194,6 +235,8 @@ class Library:
                 best, score = row, ratio
         if best is None or score < min_ratio:
             raise LookupError("No close match; try a longer or more exact phrase")
+        if self.is_timed(title):  # the remembered line may sit in the middle of a passage: stop before it
+            return max(best[0] - 1, 0), Passage(*best)
         return best[0], Passage(*best)
 
     def search(self, title: str, query: str, horizon: int, limit: int = 6) -> list[Passage]:

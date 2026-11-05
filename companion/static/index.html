@@ -97,7 +97,7 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
       <h2 id="addTitle" data-i18n="addBook"></h2>
       <form id="addForm">
         <label for="file" data-i18n="file"></label>
-        <input id="file" type="file" accept=".epub,.txt" required>
+        <input id="file" type="file" accept=".epub,.txt,.srt,.vtt" multiple required>
         <label for="bookTitle" data-i18n="bookTitle"></label>
         <input id="bookTitle" type="text" maxlength="200">
         <label for="bookLang" data-i18n="language"></label>
@@ -126,8 +126,16 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
       <section class="card" aria-labelledby="posTitle">
         <h2 id="posTitle" data-i18n="where"></h2>
         <h3 id="bookName" class="sr"></h3>
-        <label for="chapter" data-i18n="finishedChapter"></label>
+        <label for="chapter" id="finishedLabel" data-i18n="finishedChapter"></label>
         <select id="chapter"></select>
+        <div id="timeRow" hidden>
+          <label for="episodeAt" data-i18n="atEpisode"></label>
+          <div class="row">
+            <select id="episodeAt" class="grow"></select>
+            <input id="clock" type="text" inputmode="numeric" size="8" data-i18n-ph="clockPh" aria-label="mm:ss">
+            <button id="setTime" type="button" data-i18n="setTime"></button>
+          </div>
+        </div>
         <label for="phrase" data-i18n="orPhrase"></label>
         <div class="row">
           <input id="phrase" class="grow" type="text" data-i18n-ph="phrasePh">
@@ -203,7 +211,7 @@ const LANG = (navigator.language || "en").toLowerCase().startsWith("es") ? "es" 
 const TEXT = {
   es: {
     title: "Compañero de lectura sin spoilers", settings: "Ajustes de IA", library: "Mi biblioteca",
-    noBooks: "Aún no has añadido ningún libro.", addBook: "Añadir un libro", file: "Archivo (.epub o .txt)",
+    noBooks: "Aún no has añadido ningún libro.", addBook: "Añadir un libro", file: "Archivos (.epub, .txt o subtítulos .srt/.vtt)",
     bookTitle: "Título (opcional)", embed: "Búsqueda por significado (más lenta)", add: "Añadir libro",
     embedOn: "Se calcula una sola vez; una novela tarda unos minutos.",
     embedOff: "No disponible: instala fastembed (pip install fastembed).",
@@ -227,6 +235,9 @@ const TEXT = {
     keyHelpAnthropic: "Se crea en console.anthropic.com (de pago).", keyHelpCustom: "Para Ollama no hace falta clave.",
     stored: "Guardada: ", none: "ninguna", saved: "Guardado.", removed: "Clave quitada.", needKey: "Pega una clave.",
     del: "Quitar", confirmDel: "¿Quitar este libro de la biblioteca?", chapters: " capítulos", semantic: "significado",
+    finishedEpisode: "He terminado el episodio…", atEpisode: "…o estoy en el episodio, en el minuto", clockPh: "12:30",
+    setTime: "Fijar", episodeWord: "Episodio ", episodes: " episodios",
+    videoNote: "Película o serie: sube un .srt/.vtt por episodio.", badClock: "Escribe el minuto como 12:30 o 1:02:03.",
     peopleTitle: "Personajes hasta aquí", peopleHint: "Solo nombres y datos de lo que ya has leído.",
     noPeople: "Todavía no hay nombres suficientes hasta tu posición.", kindCharacter: "personaje", kindOther: "lugar u otro",
     mentionsLabel: "menciones", inChapters: "en los capítulos", firstSeen: "Primera vez", describedAs: "Descrito así",
@@ -237,7 +248,7 @@ const TEXT = {
   },
   en: {
     title: "Spoiler-free reading companion", settings: "AI settings", library: "My library",
-    noBooks: "You haven't added a book yet.", addBook: "Add a book", file: "File (.epub or .txt)",
+    noBooks: "You haven't added a book yet.", addBook: "Add a book", file: "Files (.epub, .txt or subtitles .srt/.vtt)",
     bookTitle: "Title (optional)", embed: "Search by meaning (slower)", add: "Add book",
     embedOn: "Computed once; a novel takes a few minutes.", embedOff: "Not available: install fastembed (pip install fastembed).",
     welcomeTitle: "Ask about what you've read, without being spoiled",
@@ -260,6 +271,9 @@ const TEXT = {
     keyHelpAnthropic: "Created at console.anthropic.com (paid).", keyHelpCustom: "Ollama needs no key.",
     stored: "Stored: ", none: "none", saved: "Saved.", removed: "Key removed.", needKey: "Paste a key.",
     del: "Remove", confirmDel: "Remove this book from the library?", chapters: " chapters", semantic: "meaning",
+    finishedEpisode: "I have finished episode…", atEpisode: "…or I am in episode, at minute", clockPh: "12:30",
+    setTime: "Set", episodeWord: "Episode ", episodes: " episodes",
+    videoNote: "Film or series: upload one .srt/.vtt per episode.", badClock: "Type the minute as 12:30 or 1:02:03.",
     peopleTitle: "Characters so far", peopleHint: "Only names and facts from what you have already read.",
     noPeople: "Not enough names yet up to your position.", kindCharacter: "character", kindOther: "place or other",
     mentionsLabel: "mentions", inChapters: "in chapters", firstSeen: "First seen", describedAs: "Described as",
@@ -297,6 +311,7 @@ const setPos = (title, pos) => localStorage.setItem(posKey(title), JSON.stringif
 
 function positionBody() {
   const pos = getPos(current);
+  if (pos.episode != null) return { title: current, episode: pos.episode, time: pos.time };
   return pos.ordinal != null ? { title: current, ordinal: pos.ordinal } : { title: current, chapter: pos.chapter || 0 };
 }
 function describePosition() {
@@ -306,7 +321,7 @@ function describePosition() {
   const strong = document.createElement("strong");
   strong.textContent = t("position") + ": ";
   box.append(strong);
-  if (pos.ordinal != null) box.append(pos.label || "");
+  if (pos.ordinal != null || pos.episode != null) box.append(pos.label || "");
   else if (!pos.chapter) box.append(t("notStarted"));
   else {
     const c = chapters.find((x) => x.number === pos.chapter);
@@ -328,7 +343,7 @@ function renderBooks() {
     pick.type = "button";
     pick.textContent = book.title;
     const small = document.createElement("small");
-    small.textContent = book.chapters + t("chapters") + (book.lang ? " · " + book.lang.toUpperCase() : "") + (book.semantic ? " · " + t("semantic") : "");
+    small.textContent = book.chapters + t(book.kind === "video" ? "episodes" : "chapters") + (book.lang ? " · " + book.lang.toUpperCase() : "") + (book.semantic ? " · " + t("semantic") : "");
     pick.append(small);
     pick.addEventListener("click", () => selectBook(book.title));
     const del = document.createElement("button");
@@ -382,8 +397,20 @@ async function loadChapters() {
     option.textContent = c.number + ". " + c.title;
     select.append(option);
   }
+  const video = (state.books.find((b) => b.title === current) || {}).kind === "video";
+  $("finishedLabel").textContent = t(video ? "finishedEpisode" : "finishedChapter");
+  $("timeRow").hidden = !video;
+  const episodeAt = $("episodeAt");
+  episodeAt.textContent = "";
+  for (const c of chapters) {
+    const option = document.createElement("option");
+    option.value = String(c.number);
+    option.textContent = c.number + ". " + c.title;
+    episodeAt.append(option);
+  }
   const pos = getPos(current);
-  select.value = pos.ordinal != null ? "0" : String(pos.chapter || 0);
+  select.value = pos.ordinal != null || pos.episode != null ? "0" : String(pos.chapter || 0);
+  if (pos.episode != null) { episodeAt.value = String(pos.episode); $("clock").value = pos.time || ""; }
   describePosition();
 }
 
@@ -397,6 +424,16 @@ async function selectBook(title) {
   renderBooks();
   await loadChapters();
 }
+
+$("setTime").addEventListener("click", () => {
+  const time = $("clock").value.trim();
+  if (!/^(\d+:)?\d{1,2}:\d{2}$|^\d+$/.test(time)) { $("locateMsg").textContent = t("badClock"); return; }
+  const episode = Number($("episodeAt").value);
+  setPos(current, { episode, time, label: t("episodeWord") + episode + " · " + time });
+  $("chapter").value = "0";
+  $("locateMsg").textContent = "";
+  describePosition();
+});
 
 $("chapter").addEventListener("change", () => {
   setPos(current, { chapter: Number($("chapter").value) });
@@ -421,14 +458,29 @@ $("locate").addEventListener("click", async () => {
 });
 
 // ---- adding books -----------------------------------------------------------------------------------------------
+function decodeText(buffer) {
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(buffer); }
+  catch { return new TextDecoder("windows-1252").decode(buffer); }  // older subtitle files
+}
+
 $("addForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const file = $("file").files[0];
-  if (!file) return;
+  const files = [...$("file").files];
+  if (!files.length) return;
   $("addStatus").textContent = t("adding");
   try {
-    const query = new URLSearchParams({ filename: file.name, title: $("bookTitle").value.trim(), embed: $("embed").checked ? "1" : "0", lang: $("bookLang").value });
-    const result = await api("/api/ingest?" + query, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
+    const subtitles = files.every((f) => /[.](srt|vtt)$/i.test(f.name));
+    let result;
+    if (subtitles) {
+      const episodes = [];
+      for (const file of files) episodes.push({ name: file.name, text: decodeText(await file.arrayBuffer()) });
+      result = await post("/api/ingest-subs", { title: $("bookTitle").value.trim(), episodes, embed: $("embed").checked, lang: $("bookLang").value });
+    } else {
+      if (files.length > 1) throw new Error(t("videoNote"));
+      const file = files[0];
+      const query = new URLSearchParams({ filename: file.name, title: $("bookTitle").value.trim(), embed: $("embed").checked ? "1" : "0", lang: $("bookLang").value });
+      result = await api("/api/ingest?" + query, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
+    }
     $("addStatus").textContent = t("added") + result.title;
     $("addForm").reset();
     await refresh();
@@ -520,7 +572,7 @@ function showAnswer(question, data) {
       item.dataset.ordinal = String(p.ordinal);
       const meta = document.createElement("div");
       meta.className = "meta";
-      meta.textContent = "[" + p.ordinal + "] " + t("at") + p.chapter + " · " + p.chapter_title;
+      meta.textContent = "[" + p.ordinal + "] " + t(p.start != null ? "episodeWord" : "at") + p.chapter + " · " + p.chapter_title + (p.start != null ? " · " + clock(p.start) : "");
       const text = document.createElement("div");
       text.textContent = p.text;
       item.append(meta, text);
@@ -580,11 +632,17 @@ async function refreshPeople() {
   }
 }
 
-function line(parent, label, text, ordinal) {
+function clock(seconds) {
+  const total = Math.floor(seconds), h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = total % 60;
+  const two = (n) => String(n).padStart(2, "0");
+  return h ? h + ":" + two(m) + ":" + two(s) : m + ":" + two(s);
+}
+
+function line(parent, label, text, ordinal, start) {
   const row = document.createElement("div");
   row.className = "row2";
   const strong = document.createElement("strong");
-  strong.textContent = label + (ordinal != null ? " [" + ordinal + "]" : "") + ": ";
+  strong.textContent = label + (ordinal != null ? " [" + ordinal + "]" : "") + (start != null ? " (" + clock(start) + ")" : "") + ": ";
   row.append(strong);
   const quote = document.createElement("blockquote");
   quote.textContent = text;
@@ -609,8 +667,8 @@ async function showCard(name, quiet = false) {
     const span = card.chapters.length > 1 ? card.chapters[0] + "–" + card.chapters[card.chapters.length - 1] : String(card.chapters[0]);
     stats.textContent = card.mentions + " " + t("mentionsLabel") + " · " + t("inChapters") + " " + span;
     box.append(title, badge, stats);
-    line(box, t("firstSeen"), card.first.text, card.first.ordinal);
-    for (const d of card.described_as) line(box, t("describedAs"), d.text, d.ordinal);
+    line(box, t("firstSeen"), card.first.text, card.first.ordinal, card.first.start);
+    for (const d of card.described_as) line(box, t("describedAs"), d.text, d.ordinal, d.start);
     if (card.related.length) {
       const row = document.createElement("div");
       row.className = "row2";
@@ -630,7 +688,7 @@ async function showCard(name, quiet = false) {
       row.append(related);
       box.append(row);
     }
-    if (card.last.ordinal !== card.first.ordinal) line(box, t("lastSeen"), card.last.text, card.last.ordinal);
+    if (card.last.ordinal !== card.first.ordinal) line(box, t("lastSeen"), card.last.text, card.last.ordinal, card.last.start);
     const ask = document.createElement("button");
     ask.type = "button";
     ask.textContent = t("askWho");

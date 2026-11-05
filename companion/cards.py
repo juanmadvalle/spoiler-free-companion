@@ -149,7 +149,14 @@ def card(db: sqlite3.Connection, work_id: int, language: str, name: str, horizon
 
     chapters = sorted({passages[o][0] for o in ordinals})
     info = tokens[primary]
-    return {"name": _display(primary), "aliases": [_display(m) for m in members[1:]],
-            "kind": "character" if info["cues"] else "other", "mentions": info["occ"], "passages": len(ordinals),
-            "chapters": chapters, "first": point(ordinals[0], primary), "last": point(ordinals[-1], primary),
-            "described_as": described[:3], "related": related, "position": horizon}
+    result = {"name": _display(primary), "aliases": [_display(m) for m in members[1:]],
+              "kind": "character" if info["cues"] else "other", "mentions": info["occ"], "passages": len(ordinals),
+              "chapters": chapters, "first": point(ordinals[0], primary), "last": point(ordinals[-1], primary),
+              "described_as": described[:3], "related": related, "position": horizon}
+    shown = {result["first"]["ordinal"], result["last"]["ordinal"], *(d["ordinal"] for d in result["described_as"])}
+    when = {o: a for o, a in db.execute(  # film and series passages say when they are spoken
+        "SELECT ordinal, start_s FROM chunks WHERE work_id = ? AND start_s IS NOT NULL AND ordinal IN ("
+        + ",".join("?" * len(shown)) + ")", (work_id, *shown))}
+    for item in (result["first"], result["last"], *result["described_as"]):
+        item["start"] = when.get(item["ordinal"])
+    return result
